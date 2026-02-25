@@ -290,12 +290,12 @@ const QueryPage = () => {
   return (
     <>
       <Head>
-        <title>Logos: A Debate Search Engine</title>
-        <meta name="description" content="Search the wiki for cards" />
+        <title>Logos Continuum: A Debate Search Engine</title>
+        <meta name="description" content="Search debate cards with Logos Continuum" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <div className="logo">
-        <Link href="/" passHref><a><h1>Logos</h1></a></Link>
+        <Link href="/" passHref><a><h1>Logos Continuum</h1></a></Link>
         <StyleSelect />
       </div>
       <div className="query-page">

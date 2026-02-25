@@ -1,5 +1,5 @@
 {
-  "name": "logos-web",
+  "name": "logos-continuum",
   "private": true,
   "scripts": {
     "dev": "next dev",
