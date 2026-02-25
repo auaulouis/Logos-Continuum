@@ -5,10 +5,11 @@ import aiohttp
 import traceback
 import json
 import sys
+import os
 from bs4 import BeautifulSoup
 from os.path import exists
 from os import listdir, makedirs
-from parser import Parser
+from parser import Parser, resolve_card_workers
 from search import Search
 from urllib.parse import unquote
 from itertools import takewhile
@@ -21,15 +22,20 @@ download_doc = "download_urls.txt"
 sys.setrecursionlimit(25000)
 search = Search()
 
-def parse_and_upload(folder, filename, additional_info):
+def parse_and_upload(folder, filename, additional_info, check_existing=True):
   
     
   try:
-    if search.check_filename_in_search(unquote(filename)):
+    if check_existing and search.check_filename_in_search(unquote(filename)):
       print(f"{filename} already in search, skipping")
-      return
+      return True
 
-    parser = Parser(folder + filename, additional_info)
+    parser = Parser(
+      folder + filename,
+      additional_info,
+      max_workers=resolve_card_workers(),
+      profile=os.environ.get("PARSER_PROFILE", "0") == "1"
+    )
     cards = parser.parse()
     print(f"📦 {filename}: Found {len(cards)} cards.")
     if len(cards) == 0:
@@ -37,9 +43,11 @@ def parse_and_upload(folder, filename, additional_info):
     search.upload_cards(cards, True)
     #search.upload_to_dynamo(cards)
     print(f"{filename} processed")
+    return True
   except Exception as e:
     print(e)
     print(traceback.format_exc())
+    return False
 class Scraper:
   def __init__(self, url, division, year, folder):
     self.url = url

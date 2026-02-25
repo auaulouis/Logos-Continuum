@@ -23,27 +23,36 @@ import re
 #   return text
 
 TAG_NAME = ["Heading 4", "Tags", "Tag", "Heading 3", "Heading 2"]
+TAG_NAME_SET = set(TAG_NAME)
 NORMAL_NAME = ["Normal", "Cards", "card", "Normal (Web)", "Normal/Card"]
+NORMAL_NAME_SET = set(NORMAL_NAME)
 EMPHASIS_NAME = "Emphasis"
 UNDERLINE_NAME = "Underline"
 LIST_PARAGRAPH_NAME = "List Paragraph"
 CITE_NAME = ["13 pt Bold", "Cites"]
+CITE_NAME_SET = set(CITE_NAME)
 class Card():
   def __init__(self, paragraphs, additional_info):
-    if paragraphs[0].style.name not in TAG_NAME or len(paragraphs) < 2:
+    if len(paragraphs) < 2 or paragraphs[0].style.name not in TAG_NAME_SET:
       raise Exception("Invalid paragraph structure")
 
     self.paragraphs = paragraphs
     self.tag = paragraphs[0].text.strip(", ")
     self.tag_sub = ""
+    self.body = []
+    tag_sub_parts = []
     for i in range(1, len(paragraphs)):
-      if not any(c.isdigit() for c in paragraphs[i].text):
-        self.tag_sub += paragraphs[i].text + "\n"
+      paragraph_text = paragraphs[i].text
+      if not any(c.isdigit() for c in paragraph_text):
+        tag_sub_parts.append(paragraph_text)
       else:
-        self.cite = paragraphs[i].text
+        self.cite = paragraph_text
         self.cite_i = i
-        self.body = [p.text for p in paragraphs[i+1:] if p.style.name in NORMAL_NAME or p.style.name == LIST_PARAGRAPH_NAME]
+        self.body = [p.text for p in paragraphs[i+1:] if p.style.name in NORMAL_NAME_SET or p.style.name == LIST_PARAGRAPH_NAME]
         break
+
+    if tag_sub_parts:
+      self.tag_sub = "\n".join(tag_sub_parts) + "\n"
 
     if not self.body or len("".join(self.body)) < 25:
       raise Exception("Card is too short")
@@ -61,14 +70,24 @@ class Card():
 
   def parse_paragraphs(self):
     j = 0
+    highlighted_parts = []
+    cite_paragraph = self.paragraphs[self.cite_i]
+    cite_text = cite_paragraph.text
 
-    for r in self.paragraphs[self.cite_i].runs:
+    for r in cite_paragraph.runs:
       run_text = r.text.strip()
-      run_index = self.paragraphs[self.cite_i].text.find(run_text, j)
+      if not run_text:
+        continue
+
+      run_index = cite_text.find(run_text, j)
 
       if run_index == -1:
         continue
-      if r.style.name in CITE_NAME or (r.style.font.bold or r.font.bold):
+
+      run_style = r.style
+      run_style_name = run_style.name if run_style else ""
+      run_style_font = run_style.font if run_style else None
+      if run_style_name in CITE_NAME_SET or ((run_style_font and run_style_font.bold) or r.font.bold):
         self.cite_emphasis.append((run_index, run_index + len(run_text)))
       
       j = run_index + len(run_text)
@@ -78,25 +97,35 @@ class Card():
     for i in range(self.cite_i + 1, len(self.paragraphs)):
       p = self.paragraphs[i]
       runs = p.runs
+      paragraph_text = p.text
       j = 0
 
       for r in runs:
         run_text = r.text.strip()
-        run_index = p.text.find(run_text, j)
+        if not run_text:
+          continue
+
+        run_index = paragraph_text.find(run_text, j)
 
         if run_index == -1:
           continue
+
+        run_style = r.style
+        run_style_name = run_style.name if run_style else ""
+        run_style_font = run_style.font if run_style else None
         if r.font.highlight_color is not None:
           self.highlights.append((p_index, run_index, run_index + len(run_text)))
-          self.highlighted_text += " " + run_text
-        if UNDERLINE_NAME in r.style.name or r.font.underline or r.style.font.underline:
+          highlighted_parts.append(run_text)
+        if UNDERLINE_NAME in run_style_name or r.font.underline or (run_style_font and run_style_font.underline):
           self.underlines.append((p_index, run_index, run_index + len(run_text)))
-        if EMPHASIS_NAME in r.style.name:
+        if EMPHASIS_NAME in run_style_name:
           self.emphasis.append((p_index, run_index, run_index + len(run_text)))
         
         j = run_index + len(run_text)
       
       p_index += 1
+
+    self.highlighted_text = " ".join(highlighted_parts)
   
   def get_index(self):
     index = {

@@ -2,7 +2,7 @@ from flask import Flask, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from search import Search
-from parser import Parser
+from parser import Parser, resolve_card_workers
 import os
 import glob
 import asyncio
@@ -37,7 +37,10 @@ def _index_local_docs_if_empty(search_client):
       "school": "Local",
       "team": "Local",
       "download_url": "local"
-    })
+    },
+      max_workers=resolve_card_workers(),
+      profile=os.environ.get("PARSER_PROFILE", "0") == "1"
+    )
     cards = parser.parse()
     search_client.upload_cards(cards, force_upload=True)
 
