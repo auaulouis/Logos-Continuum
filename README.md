@@ -76,6 +76,8 @@ Run these from `verbatim-parser ` with your virtualenv active.
 ### Parse all local docs
 
 Parses every `.docx` under `local_docs` and writes to the local index.
+File-level parallel parsing is enabled by default.
+After each successful batch flush, parsed files are moved into `local_docs/done`, so reruns only parse new files.
 
 ```bash
 cd "../verbatim-parser "
@@ -94,6 +96,12 @@ PARSER_PROFILE=1 PARSER_CARD_WORKERS=4 python3 local_parser.py
 ```bash
 # Print progress every 50 files
 LOCAL_PARSER_PROGRESS_EVERY=50 python3 local_parser.py
+
+# Set file-level parallel workers (default: min(cpu_count, 8))
+LOCAL_PARSER_FILE_WORKERS=8 python3 local_parser.py
+
+# Flush writes every 100 parsed docs (batch append)
+LOCAL_PARSER_FLUSH_EVERY=100 python3 local_parser.py
 
 # Sort docs before parsing
 LOCAL_PARSER_SORT=size_asc  python3 local_parser.py   # default

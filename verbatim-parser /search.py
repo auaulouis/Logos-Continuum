@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import json
 import os
 from datetime import datetime, timezone
+from fcntl import flock, LOCK_EX, LOCK_UN
 
 load_dotenv()
 
@@ -39,27 +40,100 @@ class Search:
     self.index_path = index_path
     os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
     if not os.path.exists(self.index_path):
-      self._write_cards([])
+      self._reset_index_file()
+    self._seen_ids = set()
+    self._seen_filenames = set()
+    self._index_loaded = False
+
+  def _reset_index_file(self):
+    with open(self.index_path, "w", encoding="utf-8") as handle:
+      handle.write("")
+
+  def _is_legacy_json_array(self):
+    try:
+      with open(self.index_path, "r", encoding="utf-8") as handle:
+        while True:
+          ch = handle.read(1)
+          if ch == "":
+            return False
+          if not ch.isspace():
+            return ch == "["
+    except FileNotFoundError:
+      return False
+
+  def _append_card_dicts(self, card_dicts):
+    if len(card_dicts) == 0:
+      return
+
+    with open(self.index_path, "a", encoding="utf-8") as handle:
+      flock(handle.fileno(), LOCK_EX)
+      try:
+        for card in card_dicts:
+          handle.write(json.dumps(card, ensure_ascii=False) + "\n")
+      finally:
+        flock(handle.fileno(), LOCK_UN)
+
+  def _ensure_runtime_indexes(self):
+    if self._index_loaded:
+      return
+
+    for card in self._read_cards():
+      card_id = card.get("id")
+      if card_id is not None:
+        self._seen_ids.add(str(card_id))
+
+      filename = str(card.get("filename", "")).strip().lower()
+      if filename:
+        self._seen_filenames.add(filename)
+
+    self._index_loaded = True
+
+  def _migrate_legacy_array_to_jsonl(self):
+    if not self._is_legacy_json_array():
+      return
+
+    legacy_cards = self._read_cards()
+    self._reset_index_file()
+    self._append_card_dicts(legacy_cards)
 
   def _read_cards(self):
     try:
       with open(self.index_path, "r", encoding="utf-8") as handle:
-        data = json.load(handle)
+        content = handle.read()
+        if content.strip() == "":
+          return []
+
+      stripped = content.lstrip()
+      if stripped.startswith("["):
+        data = json.loads(content)
         if isinstance(data, list):
           return data
+        return []
+
+      cards = []
+      for line in content.splitlines():
+        line = line.strip()
+        if not line:
+          continue
+        try:
+          parsed = json.loads(line)
+          if isinstance(parsed, dict):
+            cards.append(parsed)
+        except json.JSONDecodeError:
+          continue
+      return cards
     except (json.JSONDecodeError, FileNotFoundError):
       pass
     return []
-
-  def _write_cards(self, cards):
-    with open(self.index_path, "w", encoding="utf-8") as handle:
-      json.dump(cards, handle)
 
   def get_all_cards(self):
     return self._read_cards()
 
   def clear_index(self):
-    self._write_cards([])
+    self._reset_index_file()
+    self._seen_ids.clear()
+    self._seen_filenames.clear()
+    self._index_loaded = True
 
   def check_filename_in_search(self, filename):
     if not filename:
@@ -69,7 +143,8 @@ class Search:
     if target == "":
       return False
 
-    return any(str(card.get("filename", "")).strip().lower() == target for card in self._read_cards())
+    self._ensure_runtime_indexes()
+    return target in self._seen_filenames
 
   def get_by_id(self, card_id):
     card_id = str(card_id)
@@ -80,25 +155,36 @@ class Search:
 
   def upload_cards(self, cards, force_upload=False):
     card_objects = [card.get_index() for card in cards]
+    self.upload_card_indexes(card_objects, force_upload=force_upload)
+
+  def upload_card_indexes(self, card_objects, force_upload=False):
     if len(card_objects) == 0:
       return
 
+    self._migrate_legacy_array_to_jsonl()
+    self._ensure_runtime_indexes()
+
     filename = card_objects[0].get("filename")
-    if filename is not None and not force_upload and self.check_filename_in_search(filename):
+    normalized_filename = str(filename).strip().lower() if filename is not None else ""
+    if normalized_filename and not force_upload and normalized_filename in self._seen_filenames:
       print(f"{filename} already in search, skipping")
       return
 
-    existing_cards = self._read_cards()
-    existing_by_id = {str(card.get("id")): card for card in existing_cards if card.get("id") is not None}
-
+    to_append = []
     for card in card_objects:
       card_id = card.get("id")
       if card_id is None:
         continue
-      existing_by_id[str(card_id)] = card
+      card_id_str = str(card_id)
+      if card_id_str in self._seen_ids:
+        continue
+      self._seen_ids.add(card_id_str)
+      to_append.append(card)
 
-    merged_cards = list(existing_by_id.values())
-    self._write_cards(merged_cards)
+    self._append_card_dicts(to_append)
+
+    if normalized_filename:
+      self._seen_filenames.add(normalized_filename)
 
     if filename is not None:
       print(f"Indexed locally: {filename}")
