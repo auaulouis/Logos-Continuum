@@ -1,0 +1,288 @@
+
+@import "../../styles/variables.scss";
+
+.search {
+  margin-right: 10px;
+  padding: 5px 10px;
+  width: calc(30vw - 100px);
+  min-width: 250px;
+  font-family: inherit;
+  border: 1px solid $dark-green;
+  border-radius: 5px;
+  font-size: 18px;
+  outline: 0;
+
+  &::placeholder {
+    font-weight: 300;
+    font-size: 16px;
+    color: rgba(0,0,0,0.4);
+  }
+}
+
+.button {
+  padding: 7px;
+  width: 100px;
+  font-family: inherit;
+  font-weight: 700;
+  background-color: white;
+  border: 1px solid $dark-green;
+  border-radius: 5px;
+  font-size: 16px;
+  color: $dark-green;
+  cursor: pointer;
+  transition: all 0.3s;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+.loading {
+  height: 10px;
+}
+
+.results {
+  width: 35%;
+  min-width: 35%;
+  height: calc(100vh - 220px);
+  overflow-y: scroll;
+  padding-bottom: 50px;
+  overflow-x: hidden;
+}
+
+.result {
+  margin-bottom: 15px;
+  transition: 0.3s all;
+  background-color: white;
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 5px;
+  margin-left: -10px;
+  min-height: 80px;
+  outline: 0;
+
+  &:hover {
+    background-color: rgba(235,235,235);
+  }
+  &:active {
+    background-color: rgba(225,225,225);
+  }
+}
+
+.card {
+  margin-left: 20px;
+  max-height: calc(100vh - 220px);
+  overflow-y: scroll;
+  padding-bottom: 50px;
+  width: 65%;
+}
+
+.tag {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.cite {
+  font-size: 14px;
+  margin: 5px 0;
+}
+
+.download {
+  margin-top: 50px;
+}
+
+.input-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.copy-container {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+}
+
+.copy {
+  outline: 0;
+  background-color: transparent;
+  border: 0;
+  margin-left: 5px;
+  transition: all 0.3s;
+  cursor: pointer;
+  visibility: inherit;
+
+  &:hover {
+    opacity: 0.7;
+  }
+  &:active {
+    opacity: 0.5;
+  }
+}
+
+.personal {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+
+  label {
+    margin-right: 5px;
+    color: rgba(0,0,0,0.6);
+    font-weight: 300;
+    font-size: 14px;
+  }
+}
+
+.filter-prompt {
+  font-size: 16px;
+  font-weight: 300;
+  color: $dark-green;
+  transition: all 0.3s;
+  cursor: pointer;
+  position: absolute;
+  right: 50px;
+  z-index: 12;
+  background: none;
+  outline: 0;
+  border: 0;
+  font-family: inherit;
+
+  &:hover {
+    opacity: 0.7;
+  }
+  &:active {
+    opacity: 0.5;
+  }
+}
+
+.filters {
+  position: absolute;
+  margin-top: 40px;
+  right: 50px;
+  z-index: 10;
+  background-color: white;
+  height: 0px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+  border-radius: 5px;
+  overflow: hidden;
+  padding-left: 15px;
+  padding-right: 15px;
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  margin: 0 10px;
+  margin-top: 15px;
+
+  h6 {
+    font-size: 14px;
+    margin: 0;
+    color: rgba(0,0,0,0.5);
+    letter-spacing: 3px;
+  }
+  .range {
+    margin-left: 10px;
+  }
+}
+
+.filter-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.clear {
+  background: 0;
+  outline: 0;
+  color: rgba(0,0,0,0.4);
+  margin-left: 5px;
+  font-size: 12px;
+  transition: all 0.3s;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  visibility: inherit;
+
+  &:hover {
+    opacity: 0.7;
+  }
+  &:active {
+    opacity: 0.5;
+  }
+}
+
+.advanced-button {
+  outline: 0;
+  background: 0;
+  border: 0;
+  transition: all 0.3s;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  color: $dark-green;
+  margin: 10px 0;
+
+  &:hover {
+    opacity: 0.7;
+  }
+  &:active {
+    opacity: 0.5;
+  }
+}
+
+.advanced {
+  overflow: hidden;
+  height: 0px;
+}
+
+.advanced-cite {
+  padding: 3px 5px;
+  font-size: 12px;
+  color: rgba(0,0,0,0.6);
+  font-family: inherit;
+  padding-top: 5px;
+  border: 0.5px solid rgba(0,0,0,0.2);
+  border-radius: 5px;
+  outline: 0;
+
+  &::placeholder {
+    color: rgba(0,0,0,0.4);
+  }
+  &:focus::placeholder {
+    color: transparent;
+  }
+}
+
+@media screen and (max-width: 1200px) {
+  .filters {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 95vw;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .filter-prompt {
+    margin-top: 40px;
+  }
+  .filters {
+    margin-top: 80px;
+  }
+}
