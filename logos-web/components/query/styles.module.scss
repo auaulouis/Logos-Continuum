@@ -8,7 +8,7 @@
   min-width: 250px;
   font-family: inherit;
   border: 1px solid $dark-green;
-  border-radius: 5px;
+  border-radius: 18px;
   font-size: 18px;
   outline: 0;
 
@@ -26,7 +26,7 @@
   font-weight: 700;
   background-color: white;
   border: 1px solid $dark-green;
-  border-radius: 5px;
+  border-radius: 18px;
   font-size: 16px;
   color: $dark-green;
   cursor: pointer;
@@ -47,8 +47,8 @@
 .results {
   width: 35%;
   min-width: 35%;
-  height: calc(100vh - 220px);
-  overflow-y: scroll;
+  height: 100%;
+  overflow-y: auto;
   padding-bottom: 50px;
   overflow-x: hidden;
 }
@@ -74,10 +74,21 @@
 
 .card {
   margin-left: 20px;
-  max-height: calc(100vh - 220px);
-  overflow-y: scroll;
+  height: 100%;
+  overflow-y: auto;
   padding-bottom: 50px;
   width: 65%;
+}
+
+.load-more-trigger {
+  height: 1px;
+}
+
+.end-of-results {
+  text-align: center;
+  color: rgba(0,0,0,0.45);
+  font-size: 12px;
+  padding: 8px 0 16px;
 }
 
 .tag {
@@ -266,6 +277,58 @@
   &:focus::placeholder {
     color: transparent;
   }
+}
+
+.upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.drop-zone {
+  width: min(460px, 70vw);
+  min-width: 250px;
+  padding: 10px 12px;
+  border: 1px dashed $dark-green;
+  border-radius: 5px;
+  font-size: 13px;
+  color: rgba(0,0,0,0.7);
+  background-color: rgba(255,255,255,0.8);
+}
+
+.drop-zone-active {
+  background-color: rgba(100,183,145,0.12);
+}
+
+.upload-label {
+  font-size: 14px;
+  color: $dark-green;
+}
+
+.upload-input {
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.upload-status {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(0,0,0,0.7);
+}
+
+.upload-details {
+  width: min(460px, 70vw);
+  min-width: 250px;
+  min-height: 88px;
+  resize: vertical;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid rgba(0,0,0,0.25);
+  border-radius: 5px;
+  color: rgba(0,0,0,0.8);
+  background-color: rgba(255,255,255,0.9);
 }
 
 @media screen and (max-width: 1200px) {

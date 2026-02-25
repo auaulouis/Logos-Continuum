@@ -25,6 +25,7 @@ const QueryPage = () => {
   const [selectedCard, setSelectedCard] = useState('');
   const [loading, setLoading] = useState(false);
   const [scrollCursor, setScrollCursor] = useState(0);
+  const [hasMoreResults, setHasMoreResults] = useState(true);
   const [schools, setSchools] = useState<Array<SchoolOption>>([]); // list of schoools returned from the API
   const router = useRouter();
   const { query: routerQuery } = router;
@@ -182,6 +183,7 @@ const QueryPage = () => {
 
         setLoading(false);
         setScrollCursor(cursor);
+        setHasMoreResults(responseResults.length > 0 && cursor > c);
       });
 
       setLastQuery(q);
@@ -189,7 +191,7 @@ const QueryPage = () => {
   };
 
   const loadMore = async () => {
-    if ((urlSearch && urlSearch.length > 0) || cite_match) {
+    if (hasMoreResults && ((urlSearch && urlSearch.length > 0) || cite_match)) {
       searchRequest(decodeURI(urlSearch as string || ''), scrollCursor, false);
     }
   };
@@ -199,6 +201,7 @@ const QueryPage = () => {
     // initiates a new search if the query exists
     if (status !== 'loading' && ((urlSearch && urlSearch.length > 0) || cite_match)) {
       setQuery(decodeURI(urlSearch as string || ''));
+      setHasMoreResults(true);
       searchRequest(decodeURI(urlSearch as string || ''), 0, true);
     }
 
@@ -331,6 +334,7 @@ const QueryPage = () => {
             getCard={getCard}
             loadMore={loadMore}
             setDownloadUrls={setDownloadUrls}
+            hasMoreResults={hasMoreResults}
           />
           <CardDetail card={cards[selectedCard]} downloadUrls={downloadUrls} />
         </div>

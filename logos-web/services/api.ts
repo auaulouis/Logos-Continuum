@@ -24,6 +24,20 @@ export const getSchools = async () => {
   return response.data;
 };
 
+export const uploadDocx = async (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await axios.post(`${apiUrl}/upload-docx`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data as { ok: boolean; filename: string; cards_indexed: number };
+};
+
+export const clearIndex = async () => {
+  const response = await axios.post(`${apiUrl}/clear-index`);
+  return response.data as { ok: boolean };
+};
+
 export const createUser = async (accessToken: string, refreshToken: string) => {
   await axios.post(`${apiUrl}/create-user`, { refresh_token: refreshToken }, { headers: { Authorization: `Bearer ${accessToken}` } });
 };

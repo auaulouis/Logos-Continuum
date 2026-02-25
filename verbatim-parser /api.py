@@ -6,6 +6,8 @@ from parser import Parser, resolve_card_workers
 import os
 import glob
 import asyncio
+import time
+from werkzeug.utils import secure_filename
 
 load_dotenv()
 
@@ -124,6 +126,61 @@ def get_schools_list():
   api = Api()
   schools = api.get_colleges()
   return {"colleges": schools}
+
+
+@app.route("/clear-index", methods=['POST'])
+def clear_index():
+  search = Search()
+  search.clear_index()
+  return {"ok": True}
+
+
+@app.route("/upload-docx", methods=['POST'])
+def upload_docx():
+  uploaded_file = request.files.get('file')
+  if uploaded_file is None or uploaded_file.filename is None or uploaded_file.filename.strip() == "":
+    return {"error": "No file uploaded"}, 400
+
+  original_filename = secure_filename(uploaded_file.filename)
+  if not original_filename.lower().endswith('.docx'):
+    return {"error": "Only .docx files are supported"}, 400
+
+  upload_dir = os.path.join(LOCAL_DOCS_FOLDER, "uploaded_docs")
+  os.makedirs(upload_dir, exist_ok=True)
+
+  base_name, ext = os.path.splitext(original_filename)
+  saved_path = os.path.join(upload_dir, original_filename)
+  suffix = 1
+  while os.path.exists(saved_path):
+    saved_path = os.path.join(upload_dir, f"{base_name}-{suffix}{ext}")
+    suffix += 1
+
+  uploaded_file.save(saved_path)
+  stored_filename = os.path.basename(saved_path)
+
+  try:
+    parser = Parser(saved_path, {
+      "filename": stored_filename,
+      "division": "local",
+      "year": "local",
+      "school": "Local",
+      "team": "Local",
+      "download_url": "local"
+    },
+      max_workers=resolve_card_workers(),
+      profile=os.environ.get("PARSER_PROFILE", "0") == "1"
+    )
+    cards = parser.parse()
+    search = Search()
+    search.upload_cards(cards, force_upload=True)
+    return {
+      "ok": True,
+      "filename": stored_filename,
+      "stored_path": saved_path,
+      "cards_indexed": len(cards)
+    }
+  except Exception as error:
+    return {"error": f"Failed to parse {stored_filename}: {error}"}, 500
 
 
 if __name__ == '__main__':

@@ -29,7 +29,7 @@
 
 .search {
   background: white;
-  border-radius: 5px;
+  border-radius: 18px;
   border: 0;
   outline: 0;
   padding: 10px;
@@ -50,7 +50,7 @@
 
 .submit {
   background: white;
-  border-radius: 5px;
+  border-radius: 18px;
   border: 0;
   outline: 0;
   padding: 12px 20px;
@@ -67,5 +67,124 @@
   }
   &:active {
     transform: scale(0.95);
+  }
+}
+
+.upload {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upload-label {
+  color: white;
+  font-size: 14px;
+  margin: 0;
+}
+
+.drop-zone {
+  width: min(680px, 70vw);
+  min-width: 260px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(255,255,255,0.85);
+  border-radius: 18px;
+  color: rgba(255,255,255,0.95);
+  background-color: rgba(255,255,255,0.07);
+  font-size: 13px;
+}
+
+.drop-zone-active {
+  background-color: rgba(255,255,255,0.18);
+}
+
+.upload-actions {
+  width: min(680px, 70vw);
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.upload-input-wrap {
+  min-width: 0;
+}
+
+.upload-input {
+  color: white;
+  font-size: 13px;
+
+  &::file-selector-button {
+    border: 0;
+    border-radius: 18px;
+    padding: 8px 12px;
+    margin-right: 10px;
+    cursor: pointer;
+    background: white;
+    color: rgba(0,0,0,0.8);
+    font-size: 13px;
+    transition: 0.3s all;
+  }
+
+  &::file-selector-button:hover {
+    transform: scale(1.03);
+  }
+
+  &::file-selector-button:active {
+    transform: scale(0.98);
+  }
+
+  &::-webkit-file-upload-button {
+    border: 0;
+    border-radius: 18px;
+    padding: 8px 12px;
+    margin-right: 10px;
+    cursor: pointer;
+    background: white;
+    color: rgba(0,0,0,0.8);
+    font-size: 13px;
+    transition: 0.3s all;
+  }
+}
+
+.upload-status {
+  margin: 0;
+  color: rgba(255,255,255,0.95);
+  font-size: 12px;
+}
+
+.upload-details {
+  width: min(680px, 70vw);
+  min-width: 260px;
+  min-height: 92px;
+  resize: vertical;
+  padding: 8px;
+  border: 0;
+  outline: 0;
+  border-radius: 18px;
+  font-size: 12px;
+  color: rgba(0,0,0,0.8);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+.clear-index {
+  align-self: center;
+  padding: 8px 12px;
+  border-radius: 18px;
+  border: 0;
+  outline: 0;
+  cursor: pointer;
+  color: rgba(120,0,0,0.85);
+  background: rgba(255,210,210,0.95);
+  font-size: 13px;
+  transition: 0.3s all;
+
+  &:hover {
+    transform: scale(1.03);
+    background: rgba(255,195,195,0.98);
+  }
+  &:active {
+    transform: scale(0.98);
   }
 }
