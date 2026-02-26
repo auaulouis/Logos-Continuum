@@ -15,6 +15,7 @@ import queryStyles from '../components/query/styles.module.scss';
 import {
   InputBox, SearchResults, CardDetail,
 } from '../components/query';
+import type { CardDetailHandle } from '../components/query/CardDetail';
 import * as apiService from '../services/api';
 import { SearchResult } from '../lib/types';
 import {
@@ -54,7 +55,6 @@ const QueryPage = () => {
   } = routerQuery;
   const [lastQuery, setLastQuery] = useState({});
   const [downloadUrls, setDownloadUrls] = useState<Array<string>>([]);
-  const [copyRequest, setCopyRequest] = useState(0);
   const [editRequest, setEditRequest] = useState(0);
   const [isCardEditing, setIsCardEditing] = useState(false);
   const [savedEditsCount, setSavedEditsCount] = useState(0);
@@ -65,6 +65,7 @@ const QueryPage = () => {
   ]);
   const debugLogElement = useRef<HTMLDivElement | null>(null);
   const debugCloseTimer = useRef<number | null>(null);
+  const cardDetailRef = useRef<CardDetailHandle | null>(null);
 
   const isDebugOpen = debugPhase === 'open';
   const isDebugRendered = debugPhase !== 'closed';
@@ -134,13 +135,24 @@ const QueryPage = () => {
     }
   }, [formattedDebugEntries, addDebugEntry]);
 
-  const showCopiedMessage = () => {
+  const showCopiedMessage = useCallback(() => {
     setShowCopiedToast(true);
     addDebugEntry('info', 'Copied card content');
     window.setTimeout(() => {
       setShowCopiedToast(false);
     }, 1500);
-  };
+  }, [addDebugEntry]);
+
+  const onCopyCard = useCallback(async () => {
+    if (!selectedCard) return;
+
+    const copied = await cardDetailRef.current?.copyToClipboard();
+    if (copied) {
+      showCopiedMessage();
+    } else {
+      addDebugEntry('warn', 'Copy card failed');
+    }
+  }, [selectedCard, showCopiedMessage, addDebugEntry]);
 
   const refreshSavedEditsCount = useCallback(() => {
     setSavedEditsCount(getSavedCardEditsCount());
@@ -564,10 +576,7 @@ const QueryPage = () => {
                     <button
                       type="button"
                       className={queryStyles['toolbar-action']}
-                      onClick={() => {
-                        setCopyRequest((n) => n + 1);
-                        showCopiedMessage();
-                      }}
+                      onClick={() => { void onCopyCard(); }}
                       disabled={!selectedCard}
                     >
                       <img
@@ -621,20 +630,17 @@ const QueryPage = () => {
                 />
                 <div className={queryStyles['card-panel']}>
                   <CardDetail
+                    ref={cardDetailRef}
                     card={cards[selectedCard]}
                     downloadUrls={downloadUrls}
                     externalEditRequest={editRequest}
-                    externalCopyRequest={copyRequest}
                     onEditModeChange={setIsCardEditing}
                     editorRightActions={isCardEditing ? (
                       <>
                         <button
                           type="button"
                           className={queryStyles['toolbar-action']}
-                          onClick={() => {
-                            setCopyRequest((n) => n + 1);
-                            showCopiedMessage();
-                          }}
+                          onClick={() => { void onCopyCard(); }}
                           disabled={!selectedCard}
                         >
                           <img

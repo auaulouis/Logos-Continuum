@@ -3,7 +3,15 @@
 /* eslint-disable react/no-danger */
 /* eslint-disable react/no-array-index-key */
 import {
-  useRef, useContext, useEffect, useMemo, useState, type ReactNode,
+  forwardRef,
+  useRef,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useImperativeHandle,
+  type ReactNode,
 } from 'react';
 import { AppContext } from '../../lib/appContext';
 import type { Card } from '../../lib/types';
@@ -19,10 +27,13 @@ type CardProps = {
   downloadUrls?: string[];
   onCardSave?: (card: Card) => void;
   externalEditRequest?: number;
-  externalCopyRequest?: number;
   onEditModeChange?: (editing: boolean) => void;
   editorRightActions?: ReactNode;
 }
+
+export type CardDetailHandle = {
+  copyToClipboard: () => Promise<boolean>;
+};
 
 type DraftSnapshot = {
   tagDraft: string;
@@ -55,15 +66,14 @@ const stripIdentifierTokenFromTag = (tagValue: string | undefined): string => {
   return String(tagValue || '').replace(/\s*\[\[CID-[^\]]+\]\]\s*/gi, ' ').trim();
 };
 
-const CardDetail = ({
+const CardDetail = forwardRef<CardDetailHandle, CardProps>(({ 
   card,
   downloadUrls,
   onCardSave,
   externalEditRequest = 0,
-  externalCopyRequest = 0,
   onEditModeChange,
   editorRightActions,
-}: CardProps) => {
+}: CardProps, ref) => {
   const styledCite = generateStyledCite(card?.cite, card?.cite_emphasis);
   const container = useRef<HTMLDivElement>(null);
   const { highlightColor, theme } = useContext(AppContext);
@@ -179,6 +189,10 @@ const CardDetail = ({
     return resolveHighlightColorForTheme(highlightColor, theme);
   }, [highlightColor, theme]);
 
+  const copyHighlightColor = useMemo(() => {
+    return resolveHighlightColorForTheme(highlightColor, 'light');
+  }, [highlightColor]);
+
   const hasCardChanges = useMemo(() => {
     if (!card) return false;
 
@@ -238,7 +252,7 @@ const CardDetail = ({
       .replaceAll("'", '&#39;');
   };
 
-  const buildCopyHtml = () => {
+  const buildCopyHtml = useCallback(() => {
     if (!card) return '';
 
     const source = draftCard || card;
@@ -246,22 +260,22 @@ const CardDetail = ({
     const tagSub = source.tag_sub?.trim() || '';
     const bodyHtml = source.body
       .map((paragraph, index) => {
-        const styledParagraph = generateStyledParagraph(source, index, paragraph, effectiveHighlightColor);
-        return `<p style=\"font-size: 11pt; margin: 0 0 8pt; line-height: ${LINE_HEIGHT};\">${styledParagraph}</p>`;
+        const styledParagraph = generateStyledParagraph(source, index, paragraph, copyHighlightColor);
+        return `<p style=\"font-size: 11pt; margin: 0 0 8pt; line-height: ${LINE_HEIGHT}; color: #000000;\">${styledParagraph}</p>`;
       })
       .join('');
 
     const tagSubHtml = tagSub
-      ? `<p style=\"font-size: 11pt; margin: 0 0 8pt; line-height: ${LINE_HEIGHT};\">${escapeHtml(tagSub)}</p>`
+      ? `<p style=\"font-size: 11pt; margin: 0 0 8pt; line-height: ${LINE_HEIGHT}; color: #000000;\">${escapeHtml(tagSub)}</p>`
       : '';
 
-    return `<div>${
-      `<h4 style=\"font-size: 16pt; margin-top: 2px; margin-bottom: 0; line-height: ${LINE_HEIGHT};\">${escapeHtml(source.tag || '')}</h4>`
+    return `<div style=\"color: #000000;\">${
+      `<h4 style=\"font-size: 16pt; margin-top: 2px; margin-bottom: 0; line-height: ${LINE_HEIGHT}; color: #000000;\">${escapeHtml(source.tag || '')}</h4>`
       + tagSubHtml
-      + `<p style=\"font-size: 11pt; margin-top: 0; margin-bottom: 8px; line-height: ${LINE_HEIGHT};\">${sourceStyledCite}</p>`
+      + `<p style=\"font-size: 11pt; margin-top: 0; margin-bottom: 8px; line-height: ${LINE_HEIGHT}; color: #000000;\">${sourceStyledCite}</p>`
       + bodyHtml
     }</div>`;
-  };
+  }, [card, draftCard, copyHighlightColor]);
 
   const htmlToPlainText = (html: string) => {
     const parser = document.createElement('div');
@@ -272,11 +286,11 @@ const CardDetail = ({
   /**
    * Programatically copy the content of the card to the clipboard.
    */
-  const copy = async () => {
-    if (!card) return;
+  const copy = useCallback(async () => {
+    if (!card) return false;
 
     const html = buildCopyHtml();
-    if (!html) return;
+    if (!html) return false;
 
     const plainText = htmlToPlainText(html);
 
@@ -294,7 +308,7 @@ const CardDetail = ({
             'text/plain': new Blob([plainText], { type: 'text/plain' }),
           }),
         ]);
-        return;
+        return true;
       } catch (error) {
       }
     }
@@ -313,22 +327,21 @@ const CardDetail = ({
     selection?.removeAllRanges();
     selection?.addRange(range);
 
-    document.execCommand('copy');
+    const copied = document.execCommand('copy');
     selection?.removeAllRanges();
     document.body.removeChild(temporary);
-  };
+    return copied;
+  }, [card, buildCopyHtml]);
+
+  useImperativeHandle(ref, () => ({
+    copyToClipboard: copy,
+  }), [copy]);
 
   useEffect(() => {
     if (externalEditRequest > 0 && card) {
       setIsEditing(true);
     }
   }, [externalEditRequest, card]);
-
-  useEffect(() => {
-    if (externalCopyRequest > 0 && card) {
-      copy();
-    }
-  }, [externalCopyRequest, card]);
 
   useEffect(() => {
     onEditModeChange?.(isEditing);
@@ -944,6 +957,8 @@ const CardDetail = ({
       )}
     </div>
   );
-};
+});
+
+CardDetail.displayName = 'CardDetail';
 
 export default CardDetail;
