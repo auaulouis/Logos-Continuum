@@ -1,5 +1,7 @@
 # Logos Continuum (Local)
 
+Quick links: [Screenshots](./screenshots/README.md)
+
 This workspace runs Logos Continuum locally with:
 
 - Frontend: Next.js app in `logos-web`
