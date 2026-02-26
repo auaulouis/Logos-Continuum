@@ -1,6 +1,6 @@
 /* eslint-disable jsx-a11y/control-has-associated-label */
 import { useEffect, useState, useContext } from 'react';
-import { highlightColors, fonts } from '../lib/constants';
+import { fonts, highlightColorSwatches, resolveHighlightColorForTheme } from '../lib/constants';
 import { AppContext } from '../lib/appContext';
 import styles from './styles.module.scss';
 
@@ -9,7 +9,7 @@ import styles from './styles.module.scss';
  */
 const StyleSelect = () => {
   const [selectedFont, setSelectedFont] = useState(fonts[0]);
-  const { highlightColor, setHighlightColor } = useContext(AppContext);
+  const { highlightColor, setHighlightColor, theme } = useContext(AppContext);
 
   useEffect(() => {
     document.body.style.fontFamily = `${selectedFont}, sans-serif`;
@@ -47,13 +47,14 @@ const StyleSelect = () => {
   return (
     <div className={styles.row}>
       <div className={styles['highlight-select']}>
-        {highlightColors.map((color) => {
+        {highlightColorSwatches.map((swatch) => {
+          const displayColor = resolveHighlightColorForTheme(swatch.light, theme);
           return (
             <div
               className={styles.square}
-              style={{ backgroundColor: color, border: highlightColor === color ? '1px solid rgba(0,0,0,0.5)' : '' }}
-              key={color}
-              onClick={() => setColor(color)}
+              style={{ backgroundColor: displayColor, border: highlightColor === swatch.light ? '2px solid var(--color-text-primary)' : '' }}
+              key={swatch.light}
+              onClick={() => setColor(swatch.light)}
               role="button"
               tabIndex={0}
             />

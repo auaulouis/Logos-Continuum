@@ -2,7 +2,7 @@
 import '../styles/globals.scss';
 import 'react-date-range/dist/styles.css'; // main style file
 import 'react-date-range/dist/theme/default.css'; // theme css file
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SessionProvider } from 'next-auth/react';
 import mixpanel from 'mixpanel-browser';
 import type { AppProps } from 'next/app';
@@ -12,13 +12,42 @@ mixpanel.init(process.env.NEXT_PUBLIC_MIXPANEL_KEY || '');
 
 function MyApp({ Component, pageProps: { session, ...pageProps } }: AppProps) {
   const [highlightColor, setHighlightColor] = useState<string>(defaultState.highlightColor);
+  const [theme, setTheme] = useState(defaultState.theme);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const savedTheme = window.localStorage.getItem('logos-theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      setTheme(savedTheme);
+      return;
+    }
+
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    document.documentElement.dataset.theme = theme;
+    document.body.dataset.theme = theme;
+    window.localStorage.setItem('logos-theme', theme);
+  }, [theme]);
 
   const state = useMemo(() => {
     return {
       highlightColor,
       setHighlightColor,
+      theme,
+      setTheme,
+      toggleTheme: () => setTheme((previousTheme) => (previousTheme === 'light' ? 'dark' : 'light')),
     };
-  }, [highlightColor]);
+  }, [highlightColor, theme]);
 
   return (
     <SessionProvider session={session}>

@@ -8,7 +8,8 @@ import {
 import { AppContext } from '../../lib/appContext';
 import type { Card } from '../../lib/types';
 import { saveCardEdit } from '../../lib/cardEdits';
-import { exportCardToDocx, resolveSourceDocumentLabelsFromCard } from '../../lib/cardDocxExport';
+import { resolveSourceDocumentLabelsFromCard } from '../../lib/cardDocxExport';
+import { resolveHighlightColorForTheme } from '../../lib/constants';
 import { generateStyledCite, generateStyledParagraph } from '../../lib/utils';
 import DownloadLink from '../DownloadLink';
 import styles from './styles.module.scss';
@@ -65,7 +66,7 @@ const CardDetail = ({
 }: CardProps) => {
   const styledCite = generateStyledCite(card?.cite, card?.cite_emphasis);
   const container = useRef<HTMLDivElement>(null);
-  const { highlightColor } = useContext(AppContext);
+  const { highlightColor, theme } = useContext(AppContext);
   const [isEditing, setIsEditing] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [tagSubDraft, setTagSubDraft] = useState('');
@@ -174,6 +175,10 @@ const CardDetail = ({
     };
   }, [card, tagDraft, tagSubDraft, citeDraft, bodyDraft, highlightDraft, emphasisDraft, underlineDraft, italicDraft]);
 
+  const effectiveHighlightColor = useMemo(() => {
+    return resolveHighlightColorForTheme(highlightColor, theme);
+  }, [highlightColor, theme]);
+
   const hasCardChanges = useMemo(() => {
     if (!card) return false;
 
@@ -241,7 +246,7 @@ const CardDetail = ({
     const tagSub = source.tag_sub?.trim() || '';
     const bodyHtml = source.body
       .map((paragraph, index) => {
-        const styledParagraph = generateStyledParagraph(source, index, paragraph, highlightColor);
+        const styledParagraph = generateStyledParagraph(source, index, paragraph, effectiveHighlightColor);
         return `<p style=\"font-size: 11pt; margin: 0 0 8pt; line-height: ${LINE_HEIGHT};\">${styledParagraph}</p>`;
       })
       .join('');
@@ -724,20 +729,6 @@ const CardDetail = ({
     setIsEditing(false);
   };
 
-  const onExportDocx = async () => {
-    if (!card) return;
-
-    try {
-      await exportCardToDocx({
-        card: draftCard || card,
-        sourceUrls: downloadUrls || card.download_url || card.s3_url,
-      });
-      setEditMessage('DOCX exported.');
-    } catch {
-      setEditMessage('Failed to export DOCX.');
-    }
-  };
-
   return (
     <div className={styles.card}>
       {!!card && (
@@ -928,7 +919,7 @@ const CardDetail = ({
 
             <div className={styles['paragraphs-scroll']}>
               {(isEditing ? bodyDraft : card.body).map((paragraph, i) => {
-                const styledParagraph = draftCard ? generateStyledParagraph(draftCard, i, paragraph, highlightColor) : paragraph;
+                const styledParagraph = draftCard ? generateStyledParagraph(draftCard, i, paragraph, effectiveHighlightColor) : paragraph;
 
                 return (
                   <p
@@ -947,13 +938,6 @@ const CardDetail = ({
             </div>
           </div>
           <div className={styles.download}>
-            <button
-              type="button"
-              className={styles['export-docx-button']}
-              onClick={onExportDocx}
-            >
-              Export DOCX
-            </button>
             <DownloadLink url={downloadUrls || card.download_url || card.s3_url} />
           </div>
         </>

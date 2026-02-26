@@ -1,7 +1,7 @@
 @import "./variables.scss";
 
 .container {
-  background-color: #f5f7ff;
+  background-color: var(--color-app-bg);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -20,25 +20,35 @@
   z-index: 0;
 }
 
-.bug-report-button {
+.corner-controls {
   position: fixed;
   right: 12px;
   bottom: 12px;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 999px;
-  padding: 5px;
-  background: rgba(42, 54, 86, 0.18);
-  color: #e3e3e3;
-  opacity: 0.42;
-  cursor: pointer;
   z-index: 4;
-  transition: opacity 0.2s ease, background-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bug-report-button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-button-border);
+  border-radius: 18px;
+  padding: 8px;
+  background: var(--color-button-bg);
+  box-shadow: var(--color-button-shadow);
+  color: var(--color-button-text);
+  cursor: pointer;
+  transition: all 0.3s;
 
   &:hover {
-    opacity: 0.72;
-    background: rgba(42, 54, 86, 0.28);
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
+  }
+
+  &:active {
+    transform: scale(0.98);
   }
 }
 
@@ -200,10 +210,11 @@
   --content-width: min(680px, 70vw);
   padding: 26px 26px 22px;
   border-radius: 28px;
-  border: 1px solid rgba(157, 174, 221, 0.35);
-  background: rgba(255, 255, 255, 0.56);
-  backdrop-filter: blur(8px);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-panel-surface);
+  backdrop-filter: blur(var(--panel-blur));
   box-shadow: 0 18px 42px rgba(110, 129, 180, 0.2);
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -211,7 +222,7 @@
 }
 
 .logo {
-  color: #2b3b55;
+  color: var(--color-logo);
   font-weight: 700;
   font-family: "Zalando Sans Expanded", Helvetica, Arial, sans-serif;
   font-size: calc(max(5vw, 64px));
@@ -220,7 +231,7 @@
 }
 
 .subtitle {
-  color: rgba(35, 58, 90, 0.8);
+  color: var(--color-text-secondary);
   font-weight: 300;
   font-family: inherit;
   font-size: 16px;
@@ -230,19 +241,19 @@
 }
 
 .search {
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--color-app-surface-strong);
   border-radius: 18px;
-  border: 1px solid rgba(145, 165, 214, 0.3);
+  border: 1px solid var(--color-border-soft);
   outline: 0;
   padding: 10px;
   width: auto;
   flex: 1;
   font-size: 18px;
-  color: rgba(0,0,0,0.7);
+  color: var(--color-text-primary);
   font-family: inherit;
 
   &::placeholder {
-    color: rgba(0,0,0,0.5);
+    color: var(--color-text-secondary);
     font-size: 16px;
   }
   &:focus::placeholder {
@@ -260,16 +271,16 @@
 }
 
 .submit {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
+  background: var(--color-button-bg);
   border-radius: 18px;
-  border: 1px solid rgba(145, 165, 214, 0.42);
-  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
+  border: 1px solid var(--color-button-border);
+  box-shadow: var(--color-button-shadow);
   outline: 0;
   padding: 12px 20px;
   cursor: pointer;
   transition: 0.3s all;
   font-size: 16px;
-  color: rgba(0,0,0,0.7);
+  color: var(--color-button-text);
   font-weight: 300;
   font-family: inherit;
   white-space: nowrap;
@@ -392,11 +403,11 @@
   margin-left: auto;
   padding: 8px 12px;
   border-radius: 18px;
-  border: 0;
+  border: 1px solid var(--color-button-danger-border);
   outline: 0;
   cursor: pointer;
-  color: rgba(120,0,0,0.85);
-  background: rgba(255,210,210,0.95);
+  color: var(--color-button-danger-text);
+  background: var(--color-button-danger-bg);
   font-size: 13px;
   font-family: inherit;
   transition: 0.3s all;
@@ -414,11 +425,11 @@
   align-self: center;
   padding: 8px 12px;
   border-radius: 18px;
-  border: 0;
+  border: 1px solid var(--color-button-border);
   outline: 0;
   cursor: pointer;
-  color: rgba(35, 58, 90, 0.92);
-  background: rgba(232, 240, 255, 0.95);
+  color: var(--color-button-text);
+  background: var(--color-button-bg);
   font-size: 13px;
   font-family: inherit;
   transition: 0.3s all;
@@ -431,6 +442,45 @@
   &:active {
     transform: scale(0.98);
   }
+}
+
+.panel-settings-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid var(--color-button-border);
+  box-shadow: var(--color-button-shadow);
+  outline: 0;
+  cursor: pointer;
+  color: var(--color-button-text);
+  background: var(--color-button-bg);
+  font-size: 15px;
+  font-family: inherit;
+  font-weight: 300;
+  transition: 0.3s all;
+  z-index: 4;
+
+  &:hover {
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.panel-settings-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+  filter: brightness(0) saturate(100%);
 }
 
 .confirm-overlay {
@@ -448,8 +498,8 @@
 .confirm-dialog {
   width: min(420px, 92vw);
   border-radius: 22px;
-  border: 1px solid rgba(157, 174, 221, 0.38);
-  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-app-surface-strong);
   box-shadow: 0 18px 42px rgba(110, 129, 180, 0.24);
   padding: 18px;
   display: flex;
@@ -460,7 +510,7 @@
 
 .confirm-title {
   margin: 0;
-  color: rgba(35, 58, 90, 0.95);
+  color: var(--color-text-primary);
   font-size: 20px;
   font-family: inherit;
   font-weight: 600;
@@ -468,7 +518,7 @@
 
 .confirm-body {
   margin: 0;
-  color: rgba(35, 58, 90, 0.86);
+  color: var(--color-text-secondary);
   font-size: 14px;
   line-height: 1.45;
   font-family: inherit;
@@ -484,7 +534,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: rgba(35, 58, 90, 0.92);
+  color: var(--color-text-primary);
   font-size: 13px;
 
   input {
@@ -504,7 +554,7 @@
 .confirm-cancel,
 .confirm-danger {
   border-radius: 16px;
-  border: 1px solid rgba(145, 165, 214, 0.35);
+  border: 1px solid var(--color-button-border);
   padding: 8px 14px;
   cursor: pointer;
   font-size: 13px;
@@ -526,20 +576,21 @@
 }
 
 .confirm-cancel {
-  color: rgba(35, 58, 90, 0.92);
-  background: rgba(255, 255, 255, 0.96);
+  color: var(--color-button-text);
+  background: var(--color-app-surface-strong);
 }
 
 .confirm-danger {
-  color: rgba(120, 0, 0, 0.9);
-  background: rgba(255, 210, 210, 0.95);
+  color: var(--color-button-danger-text);
+  background: var(--color-button-danger-bg);
+  border-color: var(--color-button-danger-border);
 }
 
 .parser-settings-dialog {
   width: min(520px, 94vw);
   border-radius: 22px;
-  border: 1px solid rgba(157, 174, 221, 0.38);
-  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-app-surface-strong);
   box-shadow: 0 18px 42px rgba(110, 129, 180, 0.24);
   padding: 18px;
   display: flex;
@@ -579,8 +630,8 @@
   width: min(760px, 95vw);
   max-height: min(78vh, 700px);
   border-radius: 22px;
-  border: 1px solid rgba(157, 174, 221, 0.38);
-  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-app-surface-strong);
   box-shadow: 0 18px 42px rgba(110, 129, 180, 0.24);
   padding: 18px;
   display: flex;
@@ -601,12 +652,12 @@
   flex: 1;
   min-width: min(280px, 100%);
   border-radius: 14px;
-  border: 1px solid rgba(145, 165, 214, 0.35);
+  border: 1px solid var(--color-border-soft);
   outline: 0;
   padding: 8px 10px;
   font-size: 13px;
-  color: rgba(35, 58, 90, 0.94);
-  background: rgba(255, 255, 255, 0.96);
+  color: var(--color-text-primary);
+  background: var(--color-app-surface-strong);
   font-family: inherit;
 }
 
@@ -614,7 +665,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: rgba(35, 58, 90, 0.9);
+  color: var(--color-text-secondary);
   font-size: 13px;
   user-select: none;
 
@@ -636,12 +687,12 @@
 
 .documents-select-btn {
   border-radius: 14px;
-  border: 1px solid rgba(145, 165, 214, 0.35);
+  border: 1px solid var(--color-button-border);
   padding: 7px 10px;
   cursor: pointer;
   font-size: 12px;
-  color: rgba(35, 58, 90, 0.92);
-  background: rgba(232, 240, 255, 0.95);
+  color: var(--color-button-text);
+  background: var(--color-button-bg);
   font-family: inherit;
   transition: 0.2s transform ease, 0.2s background-color ease;
 
@@ -668,19 +719,19 @@
 
 .documents-title {
   margin: 0;
-  color: rgba(35, 58, 90, 0.95);
+  color: var(--color-text-primary);
   font-size: 20px;
   font-weight: 600;
 }
 
 .documents-close {
   border-radius: 16px;
-  border: 1px solid rgba(145, 165, 214, 0.35);
+  border: 1px solid var(--color-button-border);
   padding: 8px 12px;
   cursor: pointer;
   font-size: 13px;
-  color: rgba(35, 58, 90, 0.92);
-  background: rgba(255, 255, 255, 0.96);
+  color: var(--color-button-text);
+  background: var(--color-app-surface-strong);
 
   &:disabled {
     opacity: 0.62;
@@ -696,7 +747,7 @@
 
 .documents-meta {
   margin: 0;
-  color: rgba(35, 58, 90, 0.86);
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -710,9 +761,9 @@
 }
 
 .document-row {
-  border: 1px solid rgba(145, 165, 214, 0.28);
+  border: 1px solid var(--color-border-soft);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--color-app-surface);
   padding: 10px;
   display: flex;
   align-items: flex-start;
@@ -740,7 +791,7 @@
 
 .document-name {
   margin: 0;
-  color: rgba(35, 58, 90, 0.95);
+  color: var(--color-text-primary);
   font-size: 14px;
   font-weight: 600;
   word-break: break-word;
@@ -748,7 +799,7 @@
 
 .document-meta {
   margin: 2px 0 0;
-  color: rgba(35, 58, 90, 0.8);
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 
@@ -761,7 +812,7 @@
 .document-action-secondary,
 .document-action-danger {
   border-radius: 14px;
-  border: 1px solid rgba(145, 165, 214, 0.35);
+  border: 1px solid var(--color-button-border);
   padding: 7px 10px;
   cursor: pointer;
   font-size: 12px;
@@ -783,11 +834,12 @@
 }
 
 .document-action-secondary {
-  color: rgba(35, 58, 90, 0.92);
-  background: rgba(232, 240, 255, 0.95);
+  color: var(--color-button-text);
+  background: var(--color-button-bg);
 }
 
 .document-action-danger {
-  color: rgba(120, 0, 0, 0.9);
-  background: rgba(255, 210, 210, 0.95);
+  color: var(--color-button-danger-text);
+  background: var(--color-button-danger-bg);
+  border-color: var(--color-button-danger-border);
 }

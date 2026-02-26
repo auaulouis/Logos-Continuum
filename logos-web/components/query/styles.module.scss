@@ -404,10 +404,10 @@
 }
 
 .toolbar-action {
-  border: 1px solid rgba(145, 165, 214, 0.42);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
-  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
-  color: rgba(0,0,0,0.7);
+  border: 1px solid var(--color-button-border);
+  background: var(--color-button-bg);
+  box-shadow: var(--color-button-shadow);
+  color: var(--color-button-text);
   border-radius: 18px;
   padding: 12px 20px;
   font-family: inherit;
@@ -700,5 +700,54 @@
 
   .filters {
     margin-top: 6px;
+  }
+}
+
+:global(html[data-theme='dark']) {
+  .search,
+  .advanced-cite,
+  .upload-details {
+    color: var(--color-text-primary);
+    background: var(--color-app-surface-strong);
+    border-color: var(--color-border-soft);
+  }
+
+  .search::placeholder,
+  .advanced-cite::placeholder {
+    color: var(--color-text-secondary);
+  }
+
+  .button,
+  .export-docx-button,
+  .toolbar-action {
+    border-color: var(--color-button-border);
+    background: var(--color-button-bg);
+    box-shadow: var(--color-button-shadow);
+    color: var(--color-button-text);
+  }
+
+  .toolbar-action .icon-image {
+    filter: brightness(0) invert(1);
+  }
+
+  .result {
+    background: var(--color-app-surface);
+    border-color: var(--color-border-soft);
+  }
+
+  .tag,
+  .cite,
+  .upload-label,
+  .upload-status,
+  .card-cid,
+  .cid,
+  .end-of-results {
+    color: var(--color-text-primary);
+  }
+
+  .drop-zone {
+    color: var(--color-text-primary);
+    background-color: var(--color-app-surface);
+    border-color: var(--color-brand-dark-green);
   }
 }

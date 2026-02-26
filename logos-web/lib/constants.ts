@@ -27,11 +27,40 @@ export type SchoolOption = {
   id: number;
 }
 
+export type ThemeMode = 'light' | 'dark';
+
+export const highlightColorSwatches = [
+  {
+    light: 'yellow',
+    dark: 'rgba(214, 194, 86, 0.52)',
+  },
+  {
+    light: 'lime',
+    dark: 'rgba(110, 184, 114, 0.5)',
+  },
+  {
+    light: 'aqua',
+    dark: 'rgba(92, 156, 196, 0.5)',
+  },
+] as const;
+
 export const highlightColors = [
   'yellow',
   'lime',
   'aqua',
 ];
+
+const darkHighlightColorMap: Record<string, string> = Object.fromEntries(
+  highlightColorSwatches.map((swatch) => [swatch.light, swatch.dark]),
+);
+
+export const resolveHighlightColorForTheme = (highlightColor: string, theme: ThemeMode) => {
+  if (theme === 'dark') {
+    return darkHighlightColorMap[highlightColor] || highlightColor;
+  }
+
+  return highlightColor;
+};
 
 export const fonts = [
   'Calibri',

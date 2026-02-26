@@ -18,13 +18,13 @@
   cursor: pointer;
   outline: 0;
   font-size: 16px;
-  color: rgba(0,0,0,0.7);
+  color: var(--color-button-text);
   font-family: inherit;
   min-width: 200px;
-  border: 1px solid rgba(145, 165, 214, 0.42);
-  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
+  border: 1px solid var(--color-button-border);
+  box-shadow: var(--color-button-shadow);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
+  background: var(--color-button-bg);
 
   &:hover {
     box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
@@ -45,10 +45,10 @@
   gap: 6px;
   height: 47px;
   padding: 0 12px;
-  border: 1px solid rgba(145, 165, 214, 0.42);
-  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
+  border: 1px solid var(--color-button-border);
+  box-shadow: var(--color-button-shadow);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
+  background: var(--color-button-bg);
 }
 
 .square {
