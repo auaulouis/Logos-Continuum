@@ -19,9 +19,10 @@ export const generateStyledCite = (cite?: string, cite_emphasis: Array<[number, 
 };
 
 export const generateStyledParagraph = (card: Card, i: number, paragraph: string, highlightColor = 'yellow') => {
-  const highlights = card.highlights.filter((h) => h[0] === i + 2);
-  const underlines = card.underlines.filter((u) => u[0] === i + 2);
-  const emphases = card.emphasis.filter((u) => u[0] === i + 2);
+  const highlights = (card.highlights || []).filter((h) => h[0] === i + 2);
+  const underlines = (card.underlines || []).filter((u) => u[0] === i + 2);
+  const emphases = (card.emphasis || []).filter((u) => u[0] === i + 2);
+  const italics = (card.italics || []).filter((f) => f[0] === i + 2);
 
   const obj: Record<string, string> = {};
   for (const [_, s, e] of highlights) {
@@ -29,12 +30,16 @@ export const generateStyledParagraph = (card: Card, i: number, paragraph: string
     obj[e] = `${obj[e] || ''}</span>`;
   }
   for (const [_, s, e] of emphases) {
-    obj[s] = `${obj[s] || ''}<b><u>`;
-    obj[e] = `${obj[e] || ''}</u></b>`;
+    obj[s] = `${obj[s] || ''}<b>`;
+    obj[e] = `${obj[e] || ''}</b>`;
   }
   for (const [_, s, e] of underlines) {
     obj[s] = `${obj[s] || ''}<u>`;
     obj[e] = `${obj[e] || ''}</u>`;
+  }
+  for (const [_, s, e] of italics) {
+    obj[s] = `${obj[s] || ''}<i>`;
+    obj[e] = `${obj[e] || ''}</i>`;
   }
 
   const styledParagraph = paragraph.replace(/(?:)/g, (_, index) => obj[index] || '');

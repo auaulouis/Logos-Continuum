@@ -11,6 +11,7 @@ type InputBoxProps = {
   onSearch: () => void;
   loading: boolean;
   onCiteSearch: (s: string) => void;
+  rightAction?: React.ReactNode;
 };
 
 // provides native JSX support for the dotlottie player element
@@ -25,7 +26,7 @@ declare global {
 }
 
 const InputBox = ({
-  value, onChange, onSearch, loading, onCiteSearch, citeValue, onCiteChange,
+  value, onChange, onSearch, loading, onCiteSearch, citeValue, onCiteChange, rightAction,
 }: InputBoxProps) => {
   const [isAdvancedSearchShown, setIsAdvancedSearchShown] = useState(false);
 
@@ -48,7 +49,7 @@ const InputBox = ({
 
   return (
     <div className={styles['input-container']}>
-      <div>
+      <div className={styles['query-controls-row']}>
         <input
           type="text"
           placeholder="Search"
@@ -58,6 +59,7 @@ const InputBox = ({
           onKeyDown={onKeyDown}
         />
         <button className={styles.button} type="button" onClick={onSearch}>Submit</button>
+        {rightAction}
       </div>
 
       <button className={styles['advanced-button']} type="button" onClick={() => setIsAdvancedSearchShown((i) => !i)}>Advanced Search</button>

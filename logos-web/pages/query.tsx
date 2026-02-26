@@ -8,11 +8,14 @@ import Link from 'next/link';
 import mixpanel from 'mixpanel-browser';
 import { useSession } from 'next-auth/react';
 import StyleSelect from '../components/StyleSelect';
+import pageStyles from '../styles/index.module.scss';
+import queryStyles from '../components/query/styles.module.scss';
 import {
-  InputBox, SearchResults, CardDetail, Filters,
+  InputBox, SearchResults, CardDetail,
 } from '../components/query';
 import * as apiService from '../services/api';
 import { SearchResult } from '../lib/types';
+import { applySavedEdit } from '../lib/cardEdits';
 import {
   SideOption, sideOptions, divisionOptions, DivisionOption, yearOptions, YearOption, SchoolOption,
 } from '../lib/constants';
@@ -34,6 +37,17 @@ const QueryPage = () => {
   } = routerQuery;
   const [lastQuery, setLastQuery] = useState({});
   const [downloadUrls, setDownloadUrls] = useState<Array<string>>([]);
+  const [copyRequest, setCopyRequest] = useState(0);
+  const [editRequest, setEditRequest] = useState(0);
+  const [isCardEditing, setIsCardEditing] = useState(false);
+  const [showCopiedToast, setShowCopiedToast] = useState(false);
+
+  const showCopiedMessage = () => {
+    setShowCopiedToast(true);
+    window.setTimeout(() => {
+      setShowCopiedToast(false);
+    }, 1500);
+  };
 
   // set the initial value of the filters based on the URL
   const urlSelectedSides = sideOptions.filter((side) => { return !exclude_sides?.includes(side.name); });
@@ -229,7 +243,8 @@ const QueryPage = () => {
   const getCard = async (id: string) => {
     if (!cards[id]) {
       const card = await apiService.getCard(id);
-      setCards((c) => { return { ...c, [id]: card }; });
+      const hydratedCard = applySavedEdit(card);
+      setCards((c) => { return { ...c, [id]: hydratedCard }; });
     }
   };
 
@@ -294,50 +309,112 @@ const QueryPage = () => {
         <meta name="description" content="Search debate cards with Logos Continuum" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <div className="logo">
-        <Link href="/" passHref><a><h1>Logos Continuum</h1></a></Link>
-        <StyleSelect />
-      </div>
-      <div className="query-page">
-        <div className="page-row">
-          <InputBox
-            value={query}
-            onChange={setQuery}
-            onSearch={onSearch}
-            loading={loading}
-            onCiteSearch={onCiteSearch}
-            onCiteChange={setCiteSearch}
-            citeValue={citeSearch}
-          />
-          <Filters
-            selectionRange={dateRange}
-            handleSelect={handleSelect}
-            resetDate={resetDate}
-            onSideSelect={onSideSelect}
-            urlValues={{
-              sides: urlSelectedSides, division: urlSelectedDivision, year: urlSelectedYears, schools: urlSelectedSchools,
-            }}
-            onDivisionSelect={onDivisionSelect}
-            onYearSelect={onYearSelect}
-            onSchoolSelect={onSchoolSelect}
-            schools={schools}
-            resetSchools={resetSchools}
-            togglePersonal={togglePersonal}
-          />
-        </div>
+      <div className={pageStyles.container}>
+        <div className={pageStyles.foreground}>
+          <div className="query-shell">
+            <div className="logo query-logo">
+              <Link href="/" passHref><a><h1 className={pageStyles.logo}>Logos Continuum</h1></a></Link>
+              <div className={queryStyles['top-controls']}>
+                {!isCardEditing && (
+                  <button
+                    type="button"
+                    className={queryStyles['toolbar-action']}
+                    onClick={() => setEditRequest((n) => n + 1)}
+                    disabled={!selectedCard}
+                  >
+                    <img
+                      src="/edit_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+                      alt="Edit card"
+                      className={queryStyles['icon-image']}
+                    />
+                    Edit
+                  </button>
+                )}
+                {!isCardEditing && (
+                  <>
+                    <button
+                      type="button"
+                      className={queryStyles['toolbar-action']}
+                      onClick={() => {
+                        setCopyRequest((n) => n + 1);
+                        showCopiedMessage();
+                      }}
+                      disabled={!selectedCard}
+                    >
+                      <img
+                        src="/copy_all_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+                        alt="Copy card"
+                        className={queryStyles['icon-image']}
+                      />
+                      Copy
+                    </button>
+                    <StyleSelect />
+                  </>
+                )}
+              </div>
+            </div>
 
-        <div className="page-row">
-          <SearchResults
-            results={results}
-            setSelected={setSelectedCard}
-            cards={cards}
-            getCard={getCard}
-            loadMore={loadMore}
-            setDownloadUrls={setDownloadUrls}
-            hasMoreResults={hasMoreResults}
-          />
-          <CardDetail card={cards[selectedCard]} downloadUrls={downloadUrls} />
+            <div className="query-page">
+              <div className="page-row">
+                <InputBox
+                  value={query}
+                  onChange={setQuery}
+                  onSearch={onSearch}
+                  loading={loading}
+                  onCiteSearch={onCiteSearch}
+                  onCiteChange={setCiteSearch}
+                  citeValue={citeSearch}
+                />
+              </div>
+
+              <div className="page-row">
+                <SearchResults
+                  results={results}
+                  setSelected={setSelectedCard}
+                  cards={cards}
+                  getCard={getCard}
+                  loadMore={loadMore}
+                  setDownloadUrls={setDownloadUrls}
+                  hasMoreResults={hasMoreResults}
+                />
+                <div className={queryStyles['card-panel']}>
+                  <CardDetail
+                    card={cards[selectedCard]}
+                    downloadUrls={downloadUrls}
+                    externalEditRequest={editRequest}
+                    externalCopyRequest={copyRequest}
+                    onEditModeChange={setIsCardEditing}
+                    editorRightActions={isCardEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          className={queryStyles['toolbar-action']}
+                          onClick={() => {
+                            setCopyRequest((n) => n + 1);
+                            showCopiedMessage();
+                          }}
+                          disabled={!selectedCard}
+                        >
+                          <img
+                            src="/copy_all_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+                            alt="Copy card"
+                            className={queryStyles['icon-image']}
+                          />
+                          Copy
+                        </button>
+                        <StyleSelect />
+                      </>
+                    ) : undefined}
+                    onCardSave={(updatedCard) => {
+                      setCards((prev) => ({ ...prev, [updatedCard.id]: updatedCard }));
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+        {showCopiedToast && <div className={queryStyles['copy-toast']}>Copied</div>}
       </div>
     </>
   );

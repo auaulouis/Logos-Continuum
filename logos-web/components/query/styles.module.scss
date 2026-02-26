@@ -3,40 +3,50 @@
 
 .search {
   margin-right: 10px;
-  padding: 5px 10px;
-  width: calc(30vw - 100px);
-  min-width: 250px;
+  padding: 10px;
+  width: auto;
+  min-width: 0;
+  flex: 1;
   font-family: inherit;
-  border: 1px solid $dark-green;
+  border: 1px solid rgba(145, 165, 214, 0.3);
   border-radius: 18px;
   font-size: 18px;
   outline: 0;
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(255, 255, 255, 0.88);
 
   &::placeholder {
     font-weight: 300;
     font-size: 16px;
-    color: rgba(0,0,0,0.4);
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  &:focus::placeholder {
+    color: transparent;
   }
 }
 
 .button {
-  padding: 7px;
+  padding: 12px 20px;
   width: 100px;
   font-family: inherit;
-  font-weight: 700;
-  background-color: white;
-  border: 1px solid $dark-green;
+  font-weight: 300;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
+  border: 1px solid rgba(145, 165, 214, 0.42);
+  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
   border-radius: 18px;
   font-size: 16px;
-  color: $dark-green;
+  color: rgba(0,0,0,0.7);
   cursor: pointer;
   transition: all 0.3s;
+  white-space: nowrap;
 
   &:hover {
-    transform: scale(1.05);
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
   }
   &:active {
-    transform: scale(0.95);
+    transform: scale(0.98);
   }
 }
 
@@ -45,39 +55,63 @@
 }
 
 .results {
-  width: 35%;
-  min-width: 35%;
+  width: 34%;
+  min-width: 34%;
   height: 100%;
   overflow-y: auto;
   padding-bottom: 50px;
+  padding-left: 2px;
   overflow-x: hidden;
 }
 
 .result {
   margin-bottom: 15px;
   transition: 0.3s all;
-  background-color: white;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(145, 165, 214, 0.3);
   cursor: pointer;
   padding: 10px;
-  border-radius: 5px;
-  margin-left: -10px;
+  border-radius: 14px;
+  margin-left: 0;
   min-height: 80px;
   outline: 0;
+  box-shadow: 0 2px 8px rgba(110, 129, 180, 0.14);
 
   &:hover {
-    background-color: rgba(235,235,235);
+    background: rgba(255, 255, 255, 0.9);
   }
   &:active {
-    background-color: rgba(225,225,225);
+    background: rgba(248, 251, 255, 0.95);
   }
 }
 
 .card {
-  margin-left: 20px;
   height: 100%;
+  overflow: hidden;
+  padding-bottom: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.card-header {
+  flex: 0 0 auto;
+}
+
+.paragraphs-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding-bottom: 50px;
-  width: 65%;
+  overflow-x: hidden;
+  padding-bottom: 16px;
 }
 
 .load-more-trigger {
@@ -102,7 +136,8 @@
 }
 
 .download {
-  margin-top: 50px;
+  margin-top: 10px;
+  flex: 0 0 auto;
 }
 
 .input-container {
@@ -110,12 +145,38 @@
   flex-direction: column;
   justify-content: flex-start;
   align-items: flex-start;
+  width: 34%;
+  min-width: 34%;
+}
+
+.query-controls-row {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  position: relative;
 }
 
 .copy-container {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+  flex-wrap: wrap;
+}
+
+.editor-toolbar-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .copy {
@@ -133,6 +194,96 @@
   &:active {
     opacity: 0.5;
   }
+}
+
+.editor-action {
+  outline: 0;
+  background: 0;
+  border: 0;
+  transition: all 0.3s;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  color: $dark-green;
+  margin-left: 8px;
+
+  &:hover {
+    opacity: 0.7;
+  }
+
+  &:active {
+    opacity: 0.5;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}
+
+.editor-title {
+  width: 100%;
+  max-width: 600px;
+  font-size: 13pt;
+  margin-top: 2px;
+  margin-bottom: 0;
+  line-height: 107%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: inherit;
+}
+
+.editor-input {
+  width: 100%;
+  max-width: 700px;
+  font-size: 11pt;
+  line-height: 107%;
+  margin: 0 0 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+}
+
+.editor-paragraph-row {
+  margin-bottom: 8px;
+}
+
+.editor-highlight-label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editable-block {
+  border-radius: 4px;
+  transition: box-shadow 0.2s, background-color 0.2s;
+
+  &:focus {
+    outline: 0;
+    box-shadow: 0 0 0 2px rgba(100, 183, 145, 0.3);
+    background-color: rgba(255, 255, 255, 0.95);
+  }
+}
+
+.editor-message {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  margin: 8px 0;
+}
+
+.icon-image {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+.toolbar-action .icon-image {
+  filter: brightness(0) saturate(100%);
 }
 
 .personal {
@@ -155,54 +306,186 @@
 .filter-prompt {
   font-size: 16px;
   font-weight: 300;
-  color: $dark-green;
+  color: rgba(0,0,0,0.7);
   transition: all 0.3s;
   cursor: pointer;
-  position: absolute;
-  right: 50px;
+  position: static;
   z-index: 12;
-  background: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
   outline: 0;
-  border: 0;
+  border: 1px solid rgba(145, 165, 214, 0.42);
+  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
+  border-radius: 18px;
+  padding: 12px 20px;
   font-family: inherit;
+  white-space: nowrap;
 
   &:hover {
-    opacity: 0.7;
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
   }
   &:active {
-    opacity: 0.5;
+    transform: scale(0.98);
   }
+}
+
+.filters-toolbar {
+  position: static;
+  z-index: 12;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  margin-left: 16px;
+}
+
+.filters-anchor {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar-action {
+  border: 1px solid rgba(145, 165, 214, 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
+  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
+  color: rgba(0,0,0,0.7);
+  border-radius: 18px;
+  padding: 12px 20px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 300;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
+
+  &:hover {
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+    transform: none;
+  }
+}
+
+.editor-toolbar-action {
+  padding: 10px;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  gap: 0;
+}
+
+.top-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.copy-toast {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 40;
+  border: 1px solid rgba(145, 165, 214, 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
+  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
+  border-radius: 14px;
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  color: rgba(0,0,0,0.75);
+  pointer-events: none;
+  animation: copy-toast-fade 1.5s ease forwards;
+}
+
+@keyframes copy-toast-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.card-panel {
+  width: calc(66% - 22px);
+  margin-left: 22px;
+  margin-top: -92px;
+  height: calc(100% + 92px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .filters {
   position: absolute;
-  margin-top: 40px;
-  right: 50px;
+  margin-top: 8px;
+  left: 0;
+  right: auto;
+  top: 100%;
   z-index: 10;
-  background-color: white;
+  background: rgba(255, 255, 255, 0.88);
   height: 0px;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  justify-content: flex-end;
-  box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
-  border-radius: 5px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: min(760px, 92vw);
+  border: 1px solid rgba(145, 165, 214, 0.28);
+  box-shadow: 0 10px 26px rgba(110, 129, 180, 0.18);
+  border-radius: 18px;
   overflow: hidden;
-  padding-left: 15px;
-  padding-right: 15px;
+  padding: 8px 8px 8px;
+  transform-origin: top left;
+}
+
+.filters-collapsed {
+  border-width: 0;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+}
+
+.filters-open {
+  border-width: 1px;
 }
 
 .filter {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  margin: 0 10px;
-  margin-top: 15px;
+  margin: 4px 8px 0 0;
 
   h6 {
     font-size: 14px;
     margin: 0;
-    color: rgba(0,0,0,0.5);
+    color: rgba(35, 58, 90, 0.7);
     letter-spacing: 3px;
   }
   .range {
@@ -220,7 +503,7 @@
 .clear {
   background: 0;
   outline: 0;
-  color: rgba(0,0,0,0.4);
+  color: rgba(35, 58, 90, 0.6);
   margin-left: 5px;
   font-size: 12px;
   transition: all 0.3s;
@@ -245,7 +528,7 @@
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
-  color: $dark-green;
+  color: rgba(35, 58, 90, 0.86);
   margin: 10px 0;
 
   &:hover {
@@ -262,13 +545,13 @@
 }
 
 .advanced-cite {
-  padding: 3px 5px;
+  padding: 8px 10px;
   font-size: 12px;
-  color: rgba(0,0,0,0.6);
+  color: rgba(0,0,0,0.7);
   font-family: inherit;
-  padding-top: 5px;
-  border: 0.5px solid rgba(0,0,0,0.2);
-  border-radius: 5px;
+  border: 1px solid rgba(145, 165, 214, 0.32);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
   outline: 0;
 
   &::placeholder {
@@ -333,19 +616,31 @@
 
 @media screen and (max-width: 1200px) {
   .filters {
-    left: 50%;
-    transform: translateX(-50%);
-    width: 95vw;
+    left: 0;
+    right: auto;
+    transform: none;
+    width: fit-content;
+    max-width: min(760px, 92vw);
     flex-direction: row;
     flex-wrap: wrap;
   }
 }
 
 @media screen and (max-width: 600px) {
-  .filter-prompt {
-    margin-top: 40px;
+  .input-container {
+    width: 100%;
+    min-width: 100%;
   }
+
+  .query-controls-row {
+    width: 100%;
+  }
+
+  .filters-toolbar {
+    margin-left: 12px;
+  }
+
   .filters {
-    margin-top: 80px;
+    margin-top: 6px;
   }
 }

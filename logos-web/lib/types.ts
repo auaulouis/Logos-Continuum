@@ -16,11 +16,12 @@ export type Card = {
   division?: string;
   s3_url?: string;
   year?: string;
-  body: [string],
-  emphasis: [[number, number, number]],
-  highlights: [[number, number, number]],
-  underlines: [[number, number, number]],
-  cite_emphasis?: [[number, number]],
+  body: string[];
+  emphasis: Array<[number, number, number]>;
+  highlights: Array<[number, number, number]>;
+  underlines: Array<[number, number, number]>;
+  italics?: Array<[number, number, number]>;
+  cite_emphasis?: Array<[number, number]>;
   download_url?: string;
   tag_sub?: string;
 }
