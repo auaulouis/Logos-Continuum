@@ -1,26 +1,27 @@
-# Logos Web (Offline Fork)
+# Logos Continuum (Local)
 
-## What this is
+This workspace runs Logos Continuum locally with:
 
-This project is an offline/local fork of [tvergho/logos-web](https://github.com/tvergho/logos-web).
-
-- Original project: **Logos Web by tvergho**
-- This fork adapts the stack to run fully offline on your machine (no AWS required)
 - Frontend: Next.js app in `logos-web`
-- Backend: local parser/search API in `verbatim-parser `
+- Backend API + parser: Flask app in `verbatim-parser `
 
-## Prerequisites
+> Note: the backend folder name currently includes a trailing space: `verbatim-parser `.
+> Always quote that path in shell commands.
+
+## Requirements
 
 - macOS/Linux shell
-- Node.js (recommended: current LTS)
+- Node.js 18 LTS (recommended)
 - Python 3.9+
 
 ## Install
 
+From the workspace root (`Logos backup`):
+
 ### 1) Backend install
 
 ```bash
-cd "../verbatim-parser "
+cd "./verbatim-parser "
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -29,121 +30,113 @@ pip install -r requirements.txt
 ### 2) Frontend install
 
 ```bash
-cd "../logos-web"
+cd "./logos-web"
 yarn install
 ```
 
-If you do not use Yarn:
+If Yarn is unavailable, use npm:
 
 ```bash
 npm install
 ```
 
-## Run everything
+## Run
 
-From the workspace root (`Logos backup`), start backend + frontend together:
+### Start backend + frontend together
+
+From workspace root:
 
 ```bash
 ./start.sh
 ```
 
-Then open:
+Open:
 
-- Frontend: [http://localhost:3000](http://localhost:3000)
-- Backend API: [http://localhost:5001](http://localhost:5001)
+- Frontend UI: http://localhost:3000
+- Backend API: http://localhost:5001
 
-## Run services manually (optional)
+### Start manually (optional)
 
-### Backend only
+Backend:
 
 ```bash
-cd "../verbatim-parser "
+cd "./verbatim-parser "
 source .venv/bin/activate
 PORT=5001 python3 api.py
 ```
 
-### Frontend only
+Frontend:
 
 ```bash
-cd "../logos-web"
+cd "./logos-web"
 yarn dev
 ```
 
-## Parser & scraper commands (updated)
+## Current UI usage
 
-Run these from `verbatim-parser ` with your virtualenv active.
+## Home page (`/`)
 
-### Parse all local docs
+1. **Search box**: type a query and press **Search** to open the query page.
+2. **Upload DOCX to parse now**:
+	- Drag/drop `.docx` files or click to choose files
+	- Files are uploaded to backend `local_docs/uploaded_docs`
+	- Files are parsed immediately and indexed
+	- Parsing output appears in the details box
+3. **Parser Settings**: configure parser behavior used by API uploads/indexing:
+	- `use_parallel_processing`
+	- `parser_card_workers`
+	- `local_parser_file_workers`
+	- `flush_enabled`
+	- `flush_every_docs`
+4. **Manage Documents**:
+	- View indexed + uploaded files
+	- Search documents
+	- Remove a document from index only
+	- Delete uploaded file from folder
+	- Bulk select + delete selected docs
+5. **Clear Parsed Cards**:
+	- Clear parsed cards from index
+	- Optionally delete uploaded `.docx` files too
 
-Parses every `.docx` under `local_docs` and writes to the local index.
-File-level parallel parsing is enabled by default.
-After each successful batch flush, parsed files are moved into `local_docs/done`, so reruns only parse new files.
+## Query page (`/query`)
+
+1. **Search**: run term search from the top input.
+2. **Advanced Search**: use **Search by cite...** for cite matching.
+3. **Results list**:
+	- Infinite scrolling loads more results automatically
+	- Click a result to open full card details
+4. **Card actions**:
+	- **Edit** the selected card
+	- **Copy** card content
+	- **Export Saved Edits (N)** exports saved edits to DOCX
+	- **StyleSelect** changes copy/export styling
+5. **Saved edits behavior**:
+	- Card edits are persisted in browser `localStorage`
+	- Export includes saved edits and resolved source document labels
+
+## Data and local files
+
+- Search index file: `verbatim-parser /local_docs/cards_index.json`
+- Uploaded docs folder: `verbatim-parser /local_docs/uploaded_docs`
+- Parser settings file: `verbatim-parser /local_docs/parser_settings.json`
+
+When the backend starts and the index is empty, it auto-indexes local `.docx` files under `local_docs`.
+
+## Useful backend commands
+
+From `verbatim-parser ` with `.venv` active:
 
 ```bash
-cd "../verbatim-parser "
-source .venv/bin/activate
+# Parse local docs in batch
 python3 local_parser.py
-```
 
-### Parse with speed + profiling
-
-```bash
+# Profile parser + set card workers
 PARSER_PROFILE=1 PARSER_CARD_WORKERS=4 python3 local_parser.py
-```
 
-### Progress / ordering controls
-
-```bash
-# Print progress every 50 files
-LOCAL_PARSER_PROGRESS_EVERY=50 python3 local_parser.py
-
-# Set file-level parallel workers (default: min(cpu_count, 8))
-LOCAL_PARSER_FILE_WORKERS=8 python3 local_parser.py
-
-# Flush writes every 100 parsed docs (batch append)
-LOCAL_PARSER_FLUSH_EVERY=100 python3 local_parser.py
-
-# Sort docs before parsing
-LOCAL_PARSER_SORT=size_asc  python3 local_parser.py   # default
-LOCAL_PARSER_SORT=size_desc python3 local_parser.py
-LOCAL_PARSER_SORT=name      python3 local_parser.py
-```
-
-### Scraper batch run
-
-`scraper.py` uses its hardcoded source/config (division/year/url) in the file's `__main__` block.
-
-```bash
-cd "../verbatim-parser "
-source .venv/bin/activate
-PARSER_PROFILE=1 PARSER_CARD_WORKERS=4 python3 scraper.py
-```
-
-If `PARSER_CARD_WORKERS` is not set, parser workers default to `min(4, cpu_count)`.
-
-## Local data/index behavior
-
-- On first startup, the backend parses `.docx` files in `verbatim-parser /local_docs`
-- Parsed cards are written to a local JSON index at `verbatim-parser /local_docs/cards_index.json`
-- The frontend points to `http://localhost:5001` in development
-
-## What `wipe.py` does
-
-`wipe.py` clears the local card index file used by the backend search layer.
-
-Run it from `verbatim-parser `:
-
-```bash
-source .venv/bin/activate
+# Clear local index file
 python3 wipe.py
 ```
 
-After running it, the index is empty; the next backend startup will rebuild from files in `local_docs`.
-
 ## Credits
 
-Based on [tvergho/logos-web](https://github.com/tvergho/logos-web), adapted here for offline/local use.
-
-## License
-
-MIT
+Based on [tvergho/logos-web](https://github.com/tvergho/logos-web), adapted for local/offline use.
