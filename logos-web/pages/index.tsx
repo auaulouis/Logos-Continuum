@@ -5,7 +5,7 @@ import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ConnectDropboxButton from '../components/dropbox/ConnectDropboxButton';
 import * as apiService from '../services/api';
-import type { ParsedDocument } from '../services/api';
+import type { ParsedDocument, ParserSettings } from '../services/api';
 import styles from '../styles/index.module.scss';
 
 type DebugLevel = 'info' | 'warn' | 'error';
@@ -14,6 +14,14 @@ type DebugEntry = {
   at: number;
   level: DebugLevel;
   message: string;
+};
+
+const DEFAULT_PARSER_SETTINGS: ParserSettings = {
+  use_parallel_processing: true,
+  parser_card_workers: 1,
+  local_parser_file_workers: 4,
+  flush_enabled: true,
+  flush_every_docs: 250,
 };
 
 const IndexPage = () => {
@@ -26,14 +34,17 @@ const IndexPage = () => {
   const [isClearingIndex, setIsClearingIndex] = useState(false);
   const [clearIndexSelected, setClearIndexSelected] = useState(true);
   const [clearFilesSelected, setClearFilesSelected] = useState(false);
+  const [isParserSettingsOpen, setIsParserSettingsOpen] = useState(false);
+  const [parserSettings, setParserSettings] = useState<ParserSettings>(DEFAULT_PARSER_SETTINGS);
+  const [parserSettingsError, setParserSettingsError] = useState('');
+  const [isSavingParserSettings, setIsSavingParserSettings] = useState(false);
   const [isDocumentsBoxOpen, setIsDocumentsBoxOpen] = useState(false);
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
   const [documentsError, setDocumentsError] = useState('');
   const [documentsSearch, setDocumentsSearch] = useState('');
+  const [showHiddenDocuments, setShowHiddenDocuments] = useState(false);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [documentsView, setDocumentsView] = useState<'indexed' | 'not-indexed'>('indexed');
-  const [recentlyIndexedDocs, setRecentlyIndexedDocs] = useState<string[]>([]);
   const [isDocumentsLoading, setIsDocumentsLoading] = useState(false);
   const [deleteInProgressKey, setDeleteInProgressKey] = useState<string | null>(null);
   const [debugPhase, setDebugPhase] = useState<DebugPhase>('closed');
@@ -513,43 +524,37 @@ const IndexPage = () => {
 
     setIsClearingIndex(true);
     try {
-      let removedFiles = 0;
-      let fileDeleteFailures = 0;
       const actionNotes: string[] = [];
+      let deletedFiles = 0;
+      let failedFileDeletes = 0;
 
       if (clearIndexSelected) {
         await apiService.clearIndex();
-        actionNotes.push('cleared index');
+        actionNotes.push('index cleared');
       }
 
       if (clearFilesSelected) {
         const response = await apiService.getParsedDocuments();
         const docs = Array.isArray(response.documents) ? response.documents : [];
-
         for (const document of docs) {
           if (!document.in_folder) {
             continue;
           }
           try {
             await apiService.deleteParsedDocument(document.filename, 'folder');
-            removedFiles += 1;
+            deletedFiles += 1;
           } catch (error) {
-            fileDeleteFailures += 1;
+            failedFileDeletes += 1;
           }
         }
-
-        actionNotes.push(`deleted ${removedFiles} docx file(s)`);
-      }
-
-      if (isDocumentsBoxOpen) {
-        await loadParsedDocuments();
+        actionNotes.push(`deleted ${deletedFiles} .docx file(s)`);
       }
 
       setUploadStatus('Clear action completed.');
       setUploadDetails(
-        `${actionNotes.join(' + ')}${fileDeleteFailures > 0 ? ` (${fileDeleteFailures} file deletions failed)` : ''}`,
+        `${actionNotes.join(' + ')}${failedFileDeletes > 0 ? ` (${failedFileDeletes} file deletions failed)` : ''}`,
       );
-      addDebugEntry('info', `Clear parsed data succeeded: ${actionNotes.join(', ')}`);
+      addDebugEntry('info', `Clear parsed data completed: ${actionNotes.join(', ')}`);
       setIsClearIndexDialogOpen(false);
       setClearIndexSelected(true);
       setClearFilesSelected(false);
@@ -558,6 +563,52 @@ const IndexPage = () => {
       addDebugEntry('error', 'Failed to clear selected parsed data');
     } finally {
       setIsClearingIndex(false);
+    }
+  };
+
+  const openParserSettings = async () => {
+    setIsParserSettingsOpen(true);
+    setParserSettingsError('');
+    try {
+      const response = await apiService.getParserSettings();
+      setParserSettings(response.settings);
+      addDebugEntry('info', 'Loaded parser settings');
+    } catch (error) {
+      setParserSettingsError('Failed to load parser settings.');
+      addDebugEntry('error', 'Failed to load parser settings');
+    }
+  };
+
+  const closeParserSettings = () => {
+    if (isSavingParserSettings) {
+      return;
+    }
+    setIsParserSettingsOpen(false);
+    setParserSettingsError('');
+  };
+
+  const onSaveParserSettings = async () => {
+    setIsSavingParserSettings(true);
+    setParserSettingsError('');
+    try {
+      const payload: ParserSettings = {
+        use_parallel_processing: !!parserSettings.use_parallel_processing,
+        parser_card_workers: Math.max(1, Number(parserSettings.parser_card_workers) || 1),
+        local_parser_file_workers: Math.max(1, Number(parserSettings.local_parser_file_workers) || 1),
+        flush_enabled: !!parserSettings.flush_enabled,
+        flush_every_docs: Math.max(1, Number(parserSettings.flush_every_docs) || 1),
+      };
+      const response = await apiService.updateParserSettings(payload);
+      setParserSettings(response.settings);
+      setUploadStatus('Parser settings saved.');
+      setUploadDetails('New parsing settings will apply to future parse/index actions.');
+      addDebugEntry('info', 'Parser settings saved');
+      setIsParserSettingsOpen(false);
+    } catch (error) {
+      setParserSettingsError('Failed to save parser settings.');
+      addDebugEntry('error', 'Failed to save parser settings');
+    } finally {
+      setIsSavingParserSettings(false);
     }
   };
 
@@ -590,35 +641,23 @@ const IndexPage = () => {
     setIsDocumentsBoxOpen(false);
     setDocumentsError('');
     setDocumentsSearch('');
+    setShowHiddenDocuments(false);
     setIsSelectMode(false);
     setSelectedDocuments([]);
-    setDocumentsView('indexed');
   };
 
   const filteredDocuments = useMemo(() => {
     const queryText = documentsSearch.trim().toLowerCase();
     return documents.filter((document) => {
+      if (!showHiddenDocuments && !document.in_index) {
+        return false;
+      }
       if (!queryText) {
         return true;
       }
       return document.filename.toLowerCase().includes(queryText);
     });
-  }, [documents, documentsSearch]);
-
-  const indexedDocuments = useMemo(
-    () => filteredDocuments.filter((document) => document.in_index),
-    [filteredDocuments],
-  );
-
-  const notIndexedDocuments = useMemo(
-    () => filteredDocuments.filter((document) => !document.in_index),
-    [filteredDocuments],
-  );
-
-  const managedDocuments = useMemo(
-    () => (documentsView === 'indexed' ? indexedDocuments : notIndexedDocuments),
-    [documentsView, indexedDocuments, notIndexedDocuments],
-  );
+  }, [documents, documentsSearch, showHiddenDocuments]);
 
   const onDeleteDocument = async (document: ParsedDocument, target: 'index' | 'folder') => {
     const actionKey = `${document.filename}:${target}`;
@@ -656,7 +695,7 @@ const IndexPage = () => {
   };
 
   const onSelectAllVisible = () => {
-    const visibleNames = managedDocuments.map((document) => document.filename);
+    const visibleNames = filteredDocuments.map((document) => document.filename);
     setSelectedDocuments((prev) => {
       const areAllSelected = visibleNames.length > 0 && visibleNames.every((name) => prev.includes(name));
       if (areAllSelected) {
@@ -665,33 +704,6 @@ const IndexPage = () => {
       const merged = new Set([...prev, ...visibleNames]);
       return Array.from(merged);
     });
-  };
-
-  const onIndexDocument = async (document: ParsedDocument) => {
-    const actionKey = `${document.filename}:index-file`;
-    setDeleteInProgressKey(actionKey);
-    setDocumentsError('');
-    try {
-      const response = await apiService.indexParsedDocument(document.filename);
-      setUploadStatus('Document indexed.');
-      setUploadDetails(`Indexed ${response.filename} with ${response.cards_indexed} card(s).`);
-      setRecentlyIndexedDocs((prev) => {
-        if (prev.includes(response.filename)) {
-          return prev;
-        }
-        return [...prev, response.filename];
-      });
-      window.setTimeout(() => {
-        setRecentlyIndexedDocs((prev) => prev.filter((name) => name !== response.filename));
-      }, 8000);
-      addDebugEntry('info', `Indexed ${response.filename} from uploaded docs`);
-      await loadParsedDocuments();
-    } catch (error) {
-      setDocumentsError(`Failed to index ${document.filename}.`);
-      addDebugEntry('error', `Index failed for ${document.filename}`);
-    } finally {
-      setDeleteInProgressKey(null);
-    }
   };
 
   const onDeleteSelectedDocuments = async () => {
@@ -874,47 +886,37 @@ const IndexPage = () => {
               className={styles['documents-dialog']}
               role="dialog"
               aria-modal="true"
-              aria-label="Manage documents"
+              aria-label="Manage parsed cards"
               onClick={(event) => event.stopPropagation()}
             >
               <div className={styles['documents-header']}>
-                <h3 className={styles['documents-title']}>Manage Documents</h3>
+                <h3 className={styles['documents-title']}>Manage Parsed Cards</h3>
                 <button type="button" className={styles['documents-close']} onClick={closeDocumentsBox} disabled={!!deleteInProgressKey}>Close</button>
               </div>
               <div className={styles['documents-controls']}>
                 <input
                   type="text"
                   className={styles['documents-search']}
-                  placeholder="Search documents..."
+                  placeholder="Search parsed documents..."
                   value={documentsSearch}
                   onChange={(event) => setDocumentsSearch(event.target.value)}
                 />
                 <div className={styles['documents-actions-row']}>
-                  <div className={styles['documents-view-toggle']}>
-                    <button
-                      type="button"
-                      className={`${styles['documents-view-btn']} ${documentsView === 'indexed' ? styles['documents-view-btn-active'] : ''}`}
-                      onClick={() => setDocumentsView('indexed')}
-                      disabled={!!deleteInProgressKey}
-                    >
-                      Indexed
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles['documents-view-btn']} ${documentsView === 'not-indexed' ? styles['documents-view-btn-active'] : ''}`}
-                      onClick={() => setDocumentsView('not-indexed')}
-                      disabled={!!deleteInProgressKey}
-                    >
-                      Not Indexed Yet
-                    </button>
-                  </div>
+                  <label className={styles['documents-toggle']}>
+                    <input
+                      type="checkbox"
+                      checked={showHiddenDocuments}
+                      onChange={(event) => setShowHiddenDocuments(event.target.checked)}
+                    />
+                    Show Hidden
+                  </label>
                   <button
                     type="button"
-                    className={`${styles['documents-select-btn']} ${styles['documents-select-main']}`}
+                    className={styles['documents-select-btn']}
                     onClick={onToggleSelectMode}
                     disabled={!!deleteInProgressKey}
                   >
-                    {isSelectMode ? 'Cancel' : 'Select'}
+                    {isSelectMode ? 'Exit' : 'Select'}
                   </button>
                   {isSelectMode && (
                     <>
@@ -922,7 +924,7 @@ const IndexPage = () => {
                         type="button"
                         className={styles['documents-select-btn']}
                         onClick={onSelectAllVisible}
-                        disabled={!!deleteInProgressKey || managedDocuments.length === 0}
+                        disabled={!!deleteInProgressKey || filteredDocuments.length === 0}
                       >
                         Select All
                       </button>
@@ -941,84 +943,146 @@ const IndexPage = () => {
               {documentsError && <p className={styles['documents-error']}>{documentsError}</p>}
               {isDocumentsLoading && <p className={styles['documents-meta']}>Loading documents...</p>}
               {!isDocumentsLoading && documents.length === 0 && (
-                <p className={styles['documents-meta']}>No documents found.</p>
+                <p className={styles['documents-meta']}>No parsed documents found.</p>
               )}
               {!isDocumentsLoading && documents.length > 0 && filteredDocuments.length === 0 && (
                 <p className={styles['documents-meta']}>No documents match your current filters.</p>
               )}
               {!isDocumentsLoading && filteredDocuments.length > 0 && (
-                <div className={styles['documents-pane']}>
-                  <p className={styles['documents-pane-title']}>
-                    {documentsView === 'indexed' ? 'Indexed Documents' : 'Not Indexed Yet'}
-                  </p>
-                  {managedDocuments.length === 0 && (
-                    <p className={styles['documents-meta']}>
-                      {documentsView === 'indexed' ? 'No indexed documents.' : 'No non-indexed documents.'}
-                    </p>
-                  )}
-                  {managedDocuments.length > 0 && (
-                    <div className={styles['documents-list']}>
-                      {managedDocuments.map((document) => {
-                        const indexKey = `${document.filename}:index`;
-                        const indexFileKey = `${document.filename}:index-file`;
-                        const folderKey = `${document.filename}:folder`;
-                        return (
-                          <div key={document.filename} className={styles['document-row']}>
-                            {isSelectMode && (
-                              <label className={styles['document-select']}>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedDocuments.includes(document.filename)}
-                                  onChange={() => toggleSelectedDocument(document.filename)}
-                                  disabled={!!deleteInProgressKey}
-                                />
-                              </label>
-                            )}
-                            <div className={styles['document-main']}>
-                              <p className={styles['document-name']}>{document.filename}</p>
-                              <p className={styles['document-meta']}>
-                                cards: {document.cards_indexed} • in index: {document.in_index ? 'yes' : 'no'} • in folder: {document.in_folder ? 'yes' : 'no'}
-                              </p>
-                              {recentlyIndexedDocs.includes(document.filename) && (
-                                <span className={styles['document-status-badge']}>Indexed just now</span>
-                              )}
-                            </div>
-                            <div className={styles['document-actions']}>
-                              {documentsView === 'indexed' ? (
-                                <button
-                                  type="button"
-                                  className={styles['document-action-secondary']}
-                                  disabled={!document.in_index || deleteInProgressKey !== null}
-                                  onClick={() => onDeleteDocument(document, 'index')}
-                                >
-                                  {deleteInProgressKey === indexKey ? 'Removing…' : 'Remove from Index'}
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className={styles['document-action-secondary']}
-                                  disabled={deleteInProgressKey !== null}
-                                  onClick={() => onIndexDocument(document)}
-                                >
-                                  {deleteInProgressKey === indexFileKey ? 'Indexing…' : 'Parse / Index'}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                className={styles['document-action-danger']}
-                                disabled={!document.in_folder || deleteInProgressKey !== null}
-                                onClick={() => onDeleteDocument(document, 'folder')}
-                              >
-                                {deleteInProgressKey === folderKey ? 'Removing…' : 'Delete File'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                <div className={styles['documents-list']}>
+                  {filteredDocuments.map((document) => {
+                    const indexKey = `${document.filename}:index`;
+                    const folderKey = `${document.filename}:folder`;
+                    return (
+                      <div key={document.filename} className={styles['document-row']}>
+                        {isSelectMode && (
+                          <label className={styles['document-select']}>
+                            <input
+                              type="checkbox"
+                              checked={selectedDocuments.includes(document.filename)}
+                              onChange={() => toggleSelectedDocument(document.filename)}
+                              disabled={!!deleteInProgressKey}
+                            />
+                          </label>
+                        )}
+                        <div className={styles['document-main']}>
+                          <p className={styles['document-name']}>{document.filename}</p>
+                          <p className={styles['document-meta']}>
+                            cards: {document.cards_indexed} • in index: {document.in_index ? 'yes' : 'no'} • in folder: {document.in_folder ? 'yes' : 'no'}
+                          </p>
+                        </div>
+                        <div className={styles['document-actions']}>
+                          <button
+                            type="button"
+                            className={styles['document-action-secondary']}
+                            disabled={!document.in_index || deleteInProgressKey !== null}
+                            onClick={() => onDeleteDocument(document, 'index')}
+                          >
+                            {deleteInProgressKey === indexKey ? 'Removing…' : 'Remove from Index'}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles['document-action-danger']}
+                            disabled={!document.in_folder || deleteInProgressKey !== null}
+                            onClick={() => onDeleteDocument(document, 'folder')}
+                          >
+                            {deleteInProgressKey === folderKey ? 'Removing…' : 'Delete File'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        {isParserSettingsOpen && (
+          <div className={styles['confirm-overlay']} role="presentation" onClick={closeParserSettings}>
+            <div
+              className={styles['parser-settings-dialog']}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Parser settings"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3 className={styles['confirm-title']}>Parser Settings</h3>
+              {parserSettingsError && <p className={styles['documents-error']}>{parserSettingsError}</p>}
+
+              <label className={styles['parser-settings-row']}>
+                <span>Use parallel processing</span>
+                <input
+                  type="checkbox"
+                  checked={parserSettings.use_parallel_processing}
+                  onChange={(event) => setParserSettings((prev) => ({ ...prev, use_parallel_processing: event.target.checked }))}
+                  disabled={isSavingParserSettings}
+                />
+              </label>
+
+              <label className={styles['parser-settings-row']}>
+                <span>Card workers (cores)</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={styles['parser-settings-input']}
+                  value={parserSettings.parser_card_workers}
+                  onChange={(event) => setParserSettings((prev) => ({ ...prev, parser_card_workers: Number(event.target.value) || 1 }))}
+                  disabled={isSavingParserSettings}
+                />
+              </label>
+
+              <label className={styles['parser-settings-row']}>
+                <span>File workers (cores)</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={styles['parser-settings-input']}
+                  value={parserSettings.local_parser_file_workers}
+                  onChange={(event) => setParserSettings((prev) => ({ ...prev, local_parser_file_workers: Number(event.target.value) || 1 }))}
+                  disabled={isSavingParserSettings}
+                />
+              </label>
+
+              <label className={styles['parser-settings-row']}>
+                <span>Enable periodic flush</span>
+                <input
+                  type="checkbox"
+                  checked={parserSettings.flush_enabled}
+                  onChange={(event) => setParserSettings((prev) => ({ ...prev, flush_enabled: event.target.checked }))}
+                  disabled={isSavingParserSettings}
+                />
+              </label>
+
+              <label className={styles['parser-settings-row']}>
+                <span>Flush every N documents</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={styles['parser-settings-input']}
+                  value={parserSettings.flush_every_docs}
+                  onChange={(event) => setParserSettings((prev) => ({ ...prev, flush_every_docs: Number(event.target.value) || 1 }))}
+                  disabled={isSavingParserSettings || !parserSettings.flush_enabled}
+                />
+              </label>
+
+              <div className={styles['confirm-actions']}>
+                <button
+                  type="button"
+                  className={styles['confirm-cancel']}
+                  onClick={closeParserSettings}
+                  disabled={isSavingParserSettings}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles['confirm-danger']}
+                  onClick={onSaveParserSettings}
+                  disabled={isSavingParserSettings}
+                >
+                  {isSavingParserSettings ? 'Saving…' : 'Save Settings'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1077,7 +1141,8 @@ const IndexPage = () => {
                 }}
               />
             </div>
-            <button type="button" className={styles['manage-index']} onClick={openDocumentsBox}>Manage Documents</button>
+            <button type="button" className={styles['manage-index']} onClick={openParserSettings}>Parser Settings</button>
+            <button type="button" className={styles['manage-index']} onClick={openDocumentsBox}>Manage Parsed Cards</button>
             <button type="button" className={styles['clear-index']} onClick={onClearIndex}>Clear Parsed Cards</button>
           </div>
           {uploadStatus && <p className={styles['upload-status']}>{uploadStatus}</p>}

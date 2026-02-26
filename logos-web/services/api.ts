@@ -46,6 +46,14 @@ export type ParsedDocument = {
   folder_path?: string | null;
 };
 
+export type ParserSettings = {
+  use_parallel_processing: boolean;
+  parser_card_workers: number;
+  local_parser_file_workers: number;
+  flush_enabled: boolean;
+  flush_every_docs: number;
+};
+
 export const getParsedDocuments = async () => {
   const response = await axios.get(`${apiUrl}/documents`);
   return response.data as { documents: ParsedDocument[] };
@@ -69,6 +77,16 @@ export const indexParsedDocument = async (filename: string) => {
     filename: string;
     cards_indexed: number;
   };
+};
+
+export const getParserSettings = async () => {
+  const response = await axios.get(`${apiUrl}/parser-settings`);
+  return response.data as { settings: ParserSettings };
+};
+
+export const updateParserSettings = async (settings: ParserSettings) => {
+  const response = await axios.post(`${apiUrl}/parser-settings`, settings);
+  return response.data as { ok: boolean; settings: ParserSettings };
 };
 
 export const createUser = async (accessToken: string, refreshToken: string) => {

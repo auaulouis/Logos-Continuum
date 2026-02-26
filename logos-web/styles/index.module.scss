@@ -260,9 +260,10 @@
 }
 
 .submit {
-  background: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 245, 255, 0.9) 100%);
   border-radius: 18px;
-  border: 1px solid rgba(145, 165, 214, 0.3);
+  border: 1px solid rgba(145, 165, 214, 0.42);
+  box-shadow: 0 2px 6px rgba(86, 110, 160, 0.16);
   outline: 0;
   padding: 12px 20px;
   cursor: pointer;
@@ -274,10 +275,11 @@
   white-space: nowrap;
 
   &:hover {
-    transform: scale(1.05);
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
   }
   &:active {
-    transform: scale(0.95);
+    transform: scale(0.98);
   }
 }
 
@@ -317,12 +319,12 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
 }
 
 .upload-input-wrap {
-  min-width: 0;
+  display: none;
 }
 
 .upload-input {
@@ -387,6 +389,7 @@
 
 .clear-index {
   align-self: center;
+  margin-left: auto;
   padding: 8px 12px;
   border-radius: 18px;
   border: 0;
@@ -532,18 +535,57 @@
   background: rgba(255, 210, 210, 0.95);
 }
 
+.parser-settings-dialog {
+  width: min(520px, 94vw);
+  border-radius: 22px;
+  border: 1px solid rgba(157, 174, 221, 0.38);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 42px rgba(110, 129, 180, 0.24);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.parser-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(35, 58, 90, 0.92);
+  font-size: 13px;
+
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+  }
+}
+
+.parser-settings-input {
+  width: 120px;
+  border-radius: 12px;
+  border: 1px solid rgba(145, 165, 214, 0.35);
+  outline: 0;
+  padding: 6px 8px;
+  color: rgba(35, 58, 90, 0.94);
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.96);
+  font-family: inherit;
+}
+
 .documents-dialog {
   width: min(760px, 95vw);
   max-height: min(78vh, 700px);
   border-radius: 22px;
   border: 1px solid rgba(157, 174, 221, 0.38);
-  background: rgba(247, 251, 255, 0.96);
+  background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 18px 42px rgba(110, 129, 180, 0.24);
-  padding: 10px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
+  gap: 10px;
   font-family: Helvetica, Arial, sans-serif;
 }
 
@@ -592,37 +634,6 @@
   padding-bottom: 2px;
 }
 
-.documents-select-main {
-  margin-left: auto;
-}
-
-.documents-view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.documents-view-btn {
-  border-radius: 14px;
-  border: 1px solid rgba(145, 165, 214, 0.35);
-  padding: 7px 10px;
-  cursor: pointer;
-  font-size: 12px;
-  color: rgba(35, 58, 90, 0.92);
-  background: rgba(255, 255, 255, 0.96);
-  font-family: inherit;
-
-  &:disabled {
-    opacity: 0.56;
-    cursor: default;
-  }
-}
-
-.documents-view-btn-active {
-  background: rgba(220, 233, 255, 0.98);
-  border-color: rgba(118, 140, 188, 0.5);
-}
-
 .documents-select-btn {
   border-radius: 14px;
   border: 1px solid rgba(145, 165, 214, 0.35);
@@ -653,7 +664,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-left: 2px;
 }
 
 .documents-title {
@@ -693,35 +703,10 @@
 .documents-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-height: 0;
-  max-height: none;
+  gap: 8px;
+  max-height: min(58vh, 560px);
   overflow: auto;
-  padding: 2px 2px 4px;
-  border-radius: 10px;
-  background: rgba(245, 249, 255, 0.78);
-}
-
-.documents-pane {
-  min-width: 0;
-  border: 1px solid rgba(145, 165, 214, 0.3);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  gap: 10px;
-  margin-bottom: 2px;
-}
-
-.documents-pane-title {
-  margin: 0;
-  color: rgba(35, 58, 90, 0.94);
-  font-size: 13px;
-  font-weight: 700;
+  padding-right: 2px;
 }
 
 .document-row {
@@ -765,17 +750,6 @@
   margin: 2px 0 0;
   color: rgba(35, 58, 90, 0.8);
   font-size: 12px;
-}
-
-.document-status-badge {
-  display: inline-block;
-  margin-top: 4px;
-  border-radius: 10px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(24, 90, 42, 0.92);
-  background: rgba(202, 245, 215, 0.92);
 }
 
 .document-actions {

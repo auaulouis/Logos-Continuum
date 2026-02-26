@@ -7,6 +7,7 @@ import os
 import glob
 import asyncio
 import time
+import json
 from werkzeug.utils import secure_filename
 
 load_dotenv()
@@ -15,6 +16,76 @@ app = Flask(__name__)
 CORS(app)
 
 LOCAL_DOCS_FOLDER = os.environ.get("LOCAL_DOCS_FOLDER", "./local_docs")
+PARSER_SETTINGS_PATH = os.environ.get("PARSER_SETTINGS_PATH", os.path.join(LOCAL_DOCS_FOLDER, "parser_settings.json"))
+
+
+DEFAULT_PARSER_SETTINGS = {
+  "use_parallel_processing": True,
+  "parser_card_workers": resolve_card_workers(),
+  "local_parser_file_workers": max(1, min(os.cpu_count() or 1, 8)),
+  "flush_enabled": True,
+  "flush_every_docs": 250,
+}
+
+
+def _normalize_parser_settings(data):
+  settings = dict(DEFAULT_PARSER_SETTINGS)
+  if not isinstance(data, dict):
+    return settings
+
+  if "use_parallel_processing" in data:
+    settings["use_parallel_processing"] = bool(data.get("use_parallel_processing"))
+
+  if "flush_enabled" in data:
+    settings["flush_enabled"] = bool(data.get("flush_enabled"))
+
+  try:
+    settings["parser_card_workers"] = max(1, int(data.get("parser_card_workers", settings["parser_card_workers"])))
+  except (TypeError, ValueError):
+    pass
+
+  try:
+    settings["local_parser_file_workers"] = max(1, int(data.get("local_parser_file_workers", settings["local_parser_file_workers"])))
+  except (TypeError, ValueError):
+    pass
+
+  try:
+    settings["flush_every_docs"] = max(1, int(data.get("flush_every_docs", settings["flush_every_docs"])))
+  except (TypeError, ValueError):
+    pass
+
+  return settings
+
+
+def _load_parser_settings():
+  try:
+    with open(PARSER_SETTINGS_PATH, "r", encoding="utf-8") as handle:
+      content = handle.read().strip()
+      if content == "":
+        return dict(DEFAULT_PARSER_SETTINGS)
+      parsed = json.loads(content)
+      return _normalize_parser_settings(parsed)
+  except (FileNotFoundError, json.JSONDecodeError, OSError):
+    return dict(DEFAULT_PARSER_SETTINGS)
+
+
+def _save_parser_settings(settings):
+  normalized = _normalize_parser_settings(settings)
+  os.makedirs(os.path.dirname(PARSER_SETTINGS_PATH), exist_ok=True)
+  with open(PARSER_SETTINGS_PATH, "w", encoding="utf-8") as handle:
+    json.dump(normalized, handle, ensure_ascii=False, indent=2)
+  return normalized
+
+
+def _resolve_api_card_workers():
+  env_workers = os.environ.get("PARSER_CARD_WORKERS")
+  if env_workers is not None:
+    return resolve_card_workers()
+
+  settings = _load_parser_settings()
+  if not settings.get("use_parallel_processing", True):
+    return 1
+  return max(1, int(settings.get("parser_card_workers", resolve_card_workers())))
 
 
 def _uploaded_docs_root():
@@ -181,6 +252,19 @@ def clear_index():
   return {"ok": True}
 
 
+@app.route("/parser-settings", methods=['GET'])
+def get_parser_settings():
+  settings = _load_parser_settings()
+  return {"settings": settings}
+
+
+@app.route("/parser-settings", methods=['POST'])
+def update_parser_settings():
+  payload = request.get_json(silent=True) or {}
+  updated = _save_parser_settings(payload)
+  return {"ok": True, "settings": updated}
+
+
 @app.route("/upload-docx", methods=['POST'])
 def upload_docx():
   uploaded_file = request.files.get('file')
@@ -213,7 +297,7 @@ def upload_docx():
       "team": "Local",
       "download_url": "local"
     },
-      max_workers=resolve_card_workers(),
+      max_workers=_resolve_api_card_workers(),
       profile=os.environ.get("PARSER_PROFILE", "0") == "1"
     )
     cards = parser.parse()
@@ -326,7 +410,7 @@ def index_document():
       "team": "Local",
       "download_url": "local"
     },
-      max_workers=resolve_card_workers(),
+      max_workers=_resolve_api_card_workers(),
       profile=os.environ.get("PARSER_PROFILE", "0") == "1"
     )
     cards = parser.parse()

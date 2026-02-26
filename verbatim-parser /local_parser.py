@@ -2,6 +2,7 @@ import os
 import glob
 import time
 import subprocess
+import json
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from parser import Parser, resolve_card_workers
@@ -9,6 +10,19 @@ from search import Search
 
 LOCAL_FOLDER = "./local_docs"
 DONE_SUBDIR = "done"
+PARSER_SETTINGS_PATH = os.environ.get("PARSER_SETTINGS_PATH", os.path.join(LOCAL_FOLDER, "parser_settings.json"))
+
+
+def _load_parser_settings():
+    try:
+        with open(PARSER_SETTINGS_PATH, "r", encoding="utf-8") as handle:
+            raw = handle.read().strip()
+            if raw == "":
+                return {}
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
 
 
 def _is_under_folder(path, folder):
@@ -102,20 +116,35 @@ def run_local_parser():
     run_started = time.perf_counter()
     processed = 0
     failed = 0
+    parser_settings = _load_parser_settings()
+
     progress_every = int(os.environ.get("LOCAL_PARSER_PROGRESS_EVERY", "250"))
-    flush_every = max(1, int(os.environ.get("LOCAL_PARSER_FLUSH_EVERY", "250")))
+
+    if os.environ.get("LOCAL_PARSER_FLUSH_EVERY") is not None:
+        flush_every = max(1, int(os.environ.get("LOCAL_PARSER_FLUSH_EVERY", "250")))
+    else:
+        flush_every = max(1, int(parser_settings.get("flush_every_docs", 250)))
+
+    flush_enabled = bool(parser_settings.get("flush_enabled", True))
 
     if os.environ.get("PARSER_CARD_WORKERS") is not None:
         card_workers = resolve_card_workers()
     else:
-        card_workers = 1
+        use_parallel_processing = bool(parser_settings.get("use_parallel_processing", True))
+        if not use_parallel_processing:
+            card_workers = 1
+        else:
+            card_workers = max(1, int(parser_settings.get("parser_card_workers", 1)))
 
     physical_cores = _detect_physical_cores()
     if physical_cores >= 4:
         default_file_workers = min(physical_cores, 8)
     else:
         default_file_workers = physical_cores
-    file_workers = max(1, int(os.environ.get("LOCAL_PARSER_FILE_WORKERS", str(default_file_workers))))
+    if os.environ.get("LOCAL_PARSER_FILE_WORKERS") is not None:
+        file_workers = max(1, int(os.environ.get("LOCAL_PARSER_FILE_WORKERS", str(default_file_workers))))
+    else:
+        file_workers = max(1, int(parser_settings.get("local_parser_file_workers", default_file_workers)))
     profile = os.environ.get("PARSER_PROFILE", "0") == "1"
     verbose_file_logs = os.environ.get("LOCAL_PARSER_VERBOSE_FILE_LOGS", "0") == "1"
 
@@ -126,6 +155,7 @@ def run_local_parser():
     buffered_done_paths = []
 
     print(f"⚙️  Write flush interval: every {flush_every} docs")
+    print(f"⚙️  Flush enabled: {flush_enabled}")
     print(f"⚙️  Card workers per doc: {card_workers}")
     print(f"⚙️  File workers: {file_workers} (physical_cores={physical_cores})")
     print(f"⚙️  Done folder: {done_folder}")
@@ -166,7 +196,7 @@ def run_local_parser():
                 buffered_cards += len(card_indexes)
                 buffered_done_paths.append(filepath)
 
-                if buffered_docs >= flush_every:
+                if flush_enabled and buffered_docs >= flush_every:
                     flush_buffer(f"interval={flush_every}")
 
                 if verbose_file_logs:
