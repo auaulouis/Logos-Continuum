@@ -8,6 +8,12 @@ This workspace runs Logos Continuum locally with:
 > Note: the backend folder name currently includes a trailing space: `verbatim-parser `.
 > Always quote that path in shell commands.
 
+## Known quirks
+
+- Backend directory name has a trailing space: `verbatim-parser `
+- Always quote backend paths in commands, for example: `cd "./verbatim-parser "`
+- If you rename the folder to remove the trailing space, also update `start.sh`
+
 ## Requirements
 
 - macOS/Linux shell
@@ -56,6 +62,8 @@ Open:
 - Backend API: http://localhost:5001
 
 ### Start manually (optional)
+
+> Reminder: keep backend paths quoted because of the trailing space in `verbatim-parser `.
 
 Backend:
 
@@ -137,6 +145,77 @@ PARSER_PROFILE=1 PARSER_CARD_WORKERS=4 python3 local_parser.py
 python3 wipe.py
 ```
 
+## Troubleshooting
+
+### `yarn dev` fails in `logos-web`
+
+```bash
+cd "./logos-web"
+rm -rf .next
+yarn install
+yarn dev
+```
+
+If it still fails, verify Node version (recommended: Node 18 LTS):
+
+```bash
+node -v
+```
+
+### Port already in use (`3000` or `5001`)
+
+Check and stop processes using those ports:
+
+```bash
+lsof -i :3000
+lsof -i :5001
+kill -9 <PID>
+```
+
+Then restart:
+
+```bash
+./start.sh
+```
+
+### Python environment mismatch
+
+This repo may have multiple virtual environments (`/Logos backup/.venv` and `verbatim-parser /.venv`).
+`start.sh` expects the backend environment at `verbatim-parser /.venv`.
+
+Recreate backend venv if missing/broken:
+
+```bash
+cd "./verbatim-parser "
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Backend starts but search is empty
+
+- Upload `.docx` files from the Home page, or place docs under `verbatim-parser /local_docs`
+- The backend auto-indexes local docs when `cards_index.json` is empty
+- You can clear and rebuild with:
+
+```bash
+cd "./verbatim-parser "
+source .venv/bin/activate
+python3 wipe.py
+PORT=5001 python3 api.py
+```
+
 ## Credits
 
 Based on [tvergho/logos-web](https://github.com/tvergho/logos-web), adapted for local/offline use.
+
+## Licence
+
+The MIT License (MIT)
+Copyright © 2026 auaulouis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
