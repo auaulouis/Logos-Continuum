@@ -298,6 +298,9 @@ class Search:
 
       searchable_text = " ".join([
         str(card.get("tag", "")),
+        str(card.get("card_identifier", "")),
+        str(card.get("card_identifier_token", "")),
+        str(card.get("card_number", "")),
         str(card.get("highlighted_text", "")),
         str(card.get("cite", "")),
         " ".join(card.get("body", []) if isinstance(card.get("body"), list) else [str(card.get("body", ""))])

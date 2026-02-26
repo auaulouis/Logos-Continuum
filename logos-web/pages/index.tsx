@@ -886,11 +886,11 @@ const IndexPage = () => {
               className={styles['documents-dialog']}
               role="dialog"
               aria-modal="true"
-              aria-label="Manage parsed cards"
+              aria-label="Manage documents"
               onClick={(event) => event.stopPropagation()}
             >
               <div className={styles['documents-header']}>
-                <h3 className={styles['documents-title']}>Manage Parsed Cards</h3>
+                <h3 className={styles['documents-title']}>Manage Documents</h3>
                 <button type="button" className={styles['documents-close']} onClick={closeDocumentsBox} disabled={!!deleteInProgressKey}>Close</button>
               </div>
               <div className={styles['documents-controls']}>
@@ -1096,7 +1096,7 @@ const IndexPage = () => {
 
         <div className={styles.row}>
           <input onKeyDown={onKeyDown} className={styles.search} placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
-          <button type="button" className={styles.submit} onClick={search}>Submit</button>
+          <button type="button" className={styles.submit} onClick={search}>Search</button>
         </div>
 
         <div className={styles.upload}>
@@ -1142,7 +1142,7 @@ const IndexPage = () => {
               />
             </div>
             <button type="button" className={styles['manage-index']} onClick={openParserSettings}>Parser Settings</button>
-            <button type="button" className={styles['manage-index']} onClick={openDocumentsBox}>Manage Parsed Cards</button>
+            <button type="button" className={styles['manage-index']} onClick={openDocumentsBox}>Manage Documents</button>
             <button type="button" className={styles['clear-index']} onClick={onClearIndex}>Clear Parsed Cards</button>
           </div>
           {uploadStatus && <p className={styles['upload-status']}>{uploadStatus}</p>}

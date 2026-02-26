@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from docx import Document
 from card import TAG_NAME_SET, Card
+from card_id_registry import CardIdRegistry
 from search import Search
 
 
@@ -31,6 +32,21 @@ class Parser():
 
   def _build_card(self, paragraphs):
     return Card(paragraphs, self.additional_info)
+
+  def _assign_persistent_identifiers(self):
+    if len(self.cards) == 0:
+      return
+
+    registry = CardIdRegistry()
+    keys = [card.get_registry_key() for card in self.cards]
+    numbers_by_key = registry.get_or_assign_numbers(keys)
+
+    for card in self.cards:
+      key = card.get_registry_key()
+      identifier_number = numbers_by_key.get(key)
+      if identifier_number is None:
+        continue
+      card.assign_identifier_number(identifier_number)
   
 
   def parse(self):
@@ -83,6 +99,8 @@ class Parser():
             print(f"⚠️ Card skipped due to error: {e}")
 
       self.cards = [card for card in ordered_cards if card is not None]
+
+    self._assign_persistent_identifiers()
 
     done_time = time.perf_counter()
 

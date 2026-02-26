@@ -6,11 +6,17 @@ export type CardEdit = {
   tag: string;
   tag_sub?: string;
   cite: string;
+  citeEmphasis?: [number, number][];
   body: string[];
   highlights: [number, number, number][];
   emphasis: [number, number, number][];
   underlines: [number, number, number][];
   italics: [number, number, number][];
+  sourceDocuments?: string[];
+  cardIdentifier?: string;
+  selectedFont?: string;
+  highlightColor?: string;
+  updatedAt?: number;
 };
 
 const isBrowser = () => typeof window !== 'undefined';
@@ -39,8 +45,19 @@ export const getSavedCardEdit = (cardId: string): CardEdit | undefined => {
 
 export const saveCardEdit = (cardId: string, edit: CardEdit) => {
   const allEdits = readAllEdits();
-  allEdits[cardId] = edit;
+  allEdits[cardId] = {
+    ...edit,
+    updatedAt: Date.now(),
+  };
   writeAllEdits(allEdits);
+};
+
+export const getAllSavedCardEdits = (): Array<{ cardId: string; edit: CardEdit }> => {
+  return Object.entries(readAllEdits()).map(([cardId, edit]) => ({ cardId, edit }));
+};
+
+export const getSavedCardEditsCount = (): number => {
+  return Object.keys(readAllEdits()).length;
 };
 
 export const applySavedEdit = (card: Card): Card => {
@@ -52,6 +69,7 @@ export const applySavedEdit = (card: Card): Card => {
     tag: saved.tag,
     tag_sub: saved.tag_sub,
     cite: saved.cite,
+    cite_emphasis: saved.citeEmphasis || card.cite_emphasis,
     body: saved.body,
     highlights: saved.highlights || [],
     emphasis: saved.emphasis || [],

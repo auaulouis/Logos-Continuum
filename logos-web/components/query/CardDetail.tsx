@@ -8,6 +8,7 @@ import {
 import { AppContext } from '../../lib/appContext';
 import type { Card } from '../../lib/types';
 import { saveCardEdit } from '../../lib/cardEdits';
+import { exportCardToDocx, resolveSourceDocumentLabelsFromCard } from '../../lib/cardDocxExport';
 import { generateStyledCite, generateStyledParagraph } from '../../lib/utils';
 import DownloadLink from '../DownloadLink';
 import styles from './styles.module.scss';
@@ -35,6 +36,24 @@ type DraftSnapshot = {
 
 const LINE_HEIGHT = '107%';
 
+const extractCardIdentifier = (tagValue: string | undefined, explicitIdentifier?: string): string => {
+  if (explicitIdentifier && explicitIdentifier.trim()) {
+    return explicitIdentifier.trim();
+  }
+
+  const tagText = String(tagValue || '');
+  const tokenMatch = tagText.match(/\[\[(CID-[^\]]+)\]\]/i);
+  if (tokenMatch?.[1]) {
+    return tokenMatch[1].trim();
+  }
+
+  return '';
+};
+
+const stripIdentifierTokenFromTag = (tagValue: string | undefined): string => {
+  return String(tagValue || '').replace(/\s*\[\[CID-[^\]]+\]\]\s*/gi, ' ').trim();
+};
+
 const CardDetail = ({
   card,
   downloadUrls,
@@ -59,6 +78,8 @@ const CardDetail = ({
   const [editMessage, setEditMessage] = useState('');
   const [undoStack, setUndoStack] = useState<DraftSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<DraftSnapshot[]>([]);
+  const cardIdentifier = extractCardIdentifier(card?.tag, card?.card_identifier);
+  const displayTag = isEditing ? tagDraft : stripIdentifierTokenFromTag(card?.tag);
 
   const cloneRanges = (ranges: Array<[number, number, number]>) => {
     return ranges.map(([line, start, end]) => [line, start, end] as [number, number, number]);
@@ -673,21 +694,48 @@ const CardDetail = ({
       italics,
     };
 
+    const sourceLabels = resolveSourceDocumentLabelsFromCard({
+      sourceUrls: downloadUrls || card.download_url || card.s3_url,
+      filename: card.filename,
+    });
+    const selectedFont = typeof window !== 'undefined'
+      ? window.localStorage.getItem('selectedFont') || undefined
+      : undefined;
+
     saveCardEdit(updatedCard.id, {
       tag: updatedCard.tag,
       tag_sub: updatedCard.tag_sub,
       cite: updatedCard.cite,
+      citeEmphasis: updatedCard.cite_emphasis || [],
       body: updatedCard.body,
       highlights: updatedCard.highlights,
       emphasis: updatedCard.emphasis,
       underlines: updatedCard.underlines,
       italics: updatedCard.italics || [],
+      sourceDocuments: sourceLabels,
+      cardIdentifier: card.card_identifier,
+      selectedFont,
+      highlightColor,
     });
 
     onCardSave?.(updatedCard);
     setUndoStack([]);
     setRedoStack([]);
     setIsEditing(false);
+  };
+
+  const onExportDocx = async () => {
+    if (!card) return;
+
+    try {
+      await exportCardToDocx({
+        card: draftCard || card,
+        sourceUrls: downloadUrls || card.download_url || card.s3_url,
+      });
+      setEditMessage('DOCX exported.');
+    } catch {
+      setEditMessage('Failed to export DOCX.');
+    }
   };
 
   return (
@@ -711,8 +759,9 @@ const CardDetail = ({
                       tagDraft: nextValue,
                     }));
                   }}
-                >{isEditing ? tagDraft : card.tag}
+                >{displayTag}
                 </h4>
+                {!isEditing && !!cardIdentifier && <div className={styles['card-cid']}>{cardIdentifier}</div>}
               </div>
               {isEditing && (
                 <div className={styles['editor-toolbar']}>
@@ -898,6 +947,13 @@ const CardDetail = ({
             </div>
           </div>
           <div className={styles.download}>
+            <button
+              type="button"
+              className={styles['export-docx-button']}
+              onClick={onExportDocx}
+            >
+              Export DOCX
+            </button>
             <DownloadLink url={downloadUrls || card.download_url || card.s3_url} />
           </div>
         </>

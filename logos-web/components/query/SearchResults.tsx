@@ -11,6 +11,24 @@ import styles from './styles.module.scss';
 
 const stringSimilarity = require('string-similarity');
 
+const extractCardIdentifier = (result: SearchResult): string => {
+  if (result.card_identifier && result.card_identifier.trim()) {
+    return result.card_identifier.trim();
+  }
+
+  const tagText = String(result.tag || '');
+  const tokenMatch = tagText.match(/\[\[(CID-[^\]]+)\]\]/i);
+  if (tokenMatch?.[1]) {
+    return tokenMatch[1].trim();
+  }
+
+  return '';
+};
+
+const stripIdentifierTokenFromTag = (tag: string): string => {
+  return String(tag || '').replace(/\s*\[\[CID-[^\]]+\]\]\s*/gi, ' ').trim();
+};
+
 type SearchResultsProps = {
   results: Array<SearchResult>;
   setSelected: (id: string) => void;
@@ -105,6 +123,8 @@ const SearchResults = ({
     }
 
     const card = cards[result.id];
+    const cardIdentifier = extractCardIdentifier(result);
+    const displayTag = stripIdentifierTokenFromTag(result.tag);
 
     const onClick = () => {
       setSelected(result.id);
@@ -115,7 +135,10 @@ const SearchResults = ({
 
     return (
       <div key={`${result.id}-${index}`} className={styles.result} role="button" tabIndex={0} onClick={onClick}>
-        <div className={styles.tag}>{/\d/.test(result.cite) ? result.tag : `${result.tag} ${result.cite}`}</div>
+        <div className={styles['result-header']}>
+          <div className={styles.tag}>{/\d/.test(result.cite) ? displayTag : `${displayTag} ${result.cite}`}</div>
+          {cardIdentifier && <div className={styles.cid}>{cardIdentifier}</div>}
+        </div>
         <div className={styles.cite}
           dangerouslySetInnerHTML={{
             __html: (/\d/.test(result.cite) ? generateStyledCite(result.cite, result.cite_emphasis, 11)

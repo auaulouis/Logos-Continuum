@@ -58,7 +58,7 @@ const InputBox = ({
           onChange={(e) => { onChange(e.target.value); }}
           onKeyDown={onKeyDown}
         />
-        <button className={styles.button} type="button" onClick={onSearch}>Submit</button>
+        <button className={styles.button} type="button" onClick={onSearch}>Search</button>
         {rightAction}
       </div>
 
