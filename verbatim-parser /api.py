@@ -17,6 +17,52 @@ CORS(app)
 LOCAL_DOCS_FOLDER = os.environ.get("LOCAL_DOCS_FOLDER", "./local_docs")
 
 
+def _uploaded_docs_root():
+  return os.path.join(LOCAL_DOCS_FOLDER, "uploaded_docs")
+
+
+def _list_uploaded_docx_files():
+  upload_dir = _uploaded_docs_root()
+  if not os.path.isdir(upload_dir):
+    return []
+
+  files = glob.glob(os.path.join(upload_dir, "**/*.docx"), recursive=True)
+  files = [path for path in files if not os.path.basename(path).startswith("~$")]
+
+  items = []
+  for path in files:
+    relative_path = os.path.relpath(path, start=upload_dir)
+    items.append({
+      "filename": os.path.basename(path),
+      "relative_path": relative_path,
+      "absolute_path": path,
+    })
+  return items
+
+
+def _delete_uploaded_docx_file(filename):
+  target = str(filename).strip().lower()
+  if target == "":
+    return None
+
+  for item in _list_uploaded_docx_files():
+    if item["filename"].strip().lower() == target:
+      os.remove(item["absolute_path"])
+      return item["relative_path"]
+  return None
+
+
+def _find_uploaded_docx_file(filename):
+  target = str(filename).strip().lower()
+  if target == "":
+    return None
+
+  for item in _list_uploaded_docx_files():
+    if item["filename"].strip().lower() == target:
+      return item
+  return None
+
+
 def _index_local_docs_if_empty(search_client):
   if len(search_client.get_all_cards()) > 0:
     return
@@ -181,6 +227,118 @@ def upload_docx():
     }
   except Exception as error:
     return {"error": f"Failed to parse {stored_filename}: {error}"}, 500
+
+
+@app.route("/documents", methods=['GET'])
+def list_documents():
+  search = Search()
+  indexed_docs = search.get_document_summaries()
+  indexed_by_name = {str(doc.get("filename", "")).strip().lower(): doc for doc in indexed_docs}
+
+  uploaded_docs = _list_uploaded_docx_files()
+  uploaded_by_name = {}
+  for doc in uploaded_docs:
+    key = doc["filename"].strip().lower()
+    if key not in uploaded_by_name:
+      uploaded_by_name[key] = doc
+
+  keys = sorted(set(indexed_by_name.keys()) | set(uploaded_by_name.keys()))
+  documents = []
+  for key in keys:
+    indexed_doc = indexed_by_name.get(key)
+    uploaded_doc = uploaded_by_name.get(key)
+
+    filename = ""
+    if indexed_doc is not None:
+      filename = indexed_doc.get("filename", "")
+    elif uploaded_doc is not None:
+      filename = uploaded_doc.get("filename", "")
+
+    documents.append({
+      "filename": filename,
+      "cards_indexed": int(indexed_doc.get("cards_indexed", 0)) if indexed_doc is not None else 0,
+      "in_index": indexed_doc is not None,
+      "in_folder": uploaded_doc is not None,
+      "folder_path": uploaded_doc.get("relative_path") if uploaded_doc is not None else None,
+    })
+
+  return {"documents": documents}
+
+
+@app.route("/delete-document", methods=['POST'])
+def delete_document():
+  payload = request.get_json(silent=True) or {}
+  filename = str(payload.get("filename", "")).strip()
+  target = str(payload.get("target", "")).strip().lower()
+
+  if filename == "":
+    return {"error": "filename is required"}, 400
+
+  if target not in ("index", "folder"):
+    return {"error": "target must be either 'index' or 'folder'"}, 400
+
+  removed_cards = 0
+  removed_from_folder = False
+  deleted_path = None
+
+  if target == "index":
+    search = Search()
+    removed_cards = search.delete_document_from_index(filename)
+  else:
+    deleted_path = _delete_uploaded_docx_file(filename)
+    removed_from_folder = deleted_path is not None
+
+  if removed_cards == 0 and not removed_from_folder:
+    return {
+      "ok": False,
+      "removed_cards": 0,
+      "removed_from_folder": False,
+      "deleted_path": None,
+      "message": "Document not found for selected target",
+    }, 404
+
+  return {
+    "ok": True,
+    "removed_cards": removed_cards,
+    "removed_from_folder": removed_from_folder,
+    "deleted_path": deleted_path,
+  }
+
+
+@app.route("/index-document", methods=['POST'])
+def index_document():
+  payload = request.get_json(silent=True) or {}
+  filename = str(payload.get("filename", "")).strip()
+  if filename == "":
+    return {"error": "filename is required"}, 400
+
+  file_item = _find_uploaded_docx_file(filename)
+  if file_item is None:
+    return {"error": "Document file not found in uploaded_docs"}, 404
+
+  absolute_path = file_item["absolute_path"]
+  try:
+    parser = Parser(absolute_path, {
+      "filename": file_item["filename"],
+      "division": "local",
+      "year": "local",
+      "school": "Local",
+      "team": "Local",
+      "download_url": "local"
+    },
+      max_workers=resolve_card_workers(),
+      profile=os.environ.get("PARSER_PROFILE", "0") == "1"
+    )
+    cards = parser.parse()
+    search = Search()
+    search.upload_cards(cards, force_upload=True)
+    return {
+      "ok": True,
+      "filename": file_item["filename"],
+      "cards_indexed": len(cards),
+    }
+  except Exception as error:
+    return {"error": f"Failed to index {file_item['filename']}: {error}"}, 500
 
 
 if __name__ == '__main__':

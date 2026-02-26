@@ -38,6 +38,39 @@ export const clearIndex = async () => {
   return response.data as { ok: boolean };
 };
 
+export type ParsedDocument = {
+  filename: string;
+  cards_indexed: number;
+  in_index: boolean;
+  in_folder: boolean;
+  folder_path?: string | null;
+};
+
+export const getParsedDocuments = async () => {
+  const response = await axios.get(`${apiUrl}/documents`);
+  return response.data as { documents: ParsedDocument[] };
+};
+
+export const deleteParsedDocument = async (filename: string, target: 'index' | 'folder') => {
+  const response = await axios.post(`${apiUrl}/delete-document`, { filename, target });
+  return response.data as {
+    ok: boolean;
+    removed_cards: number;
+    removed_from_folder: boolean;
+    deleted_path: string | null;
+    message?: string;
+  };
+};
+
+export const indexParsedDocument = async (filename: string) => {
+  const response = await axios.post(`${apiUrl}/index-document`, { filename });
+  return response.data as {
+    ok: boolean;
+    filename: string;
+    cards_indexed: number;
+  };
+};
+
 export const createUser = async (accessToken: string, refreshToken: string) => {
   await axios.post(`${apiUrl}/create-user`, { refresh_token: refreshToken }, { headers: { Authorization: `Bearer ${accessToken}` } });
 };

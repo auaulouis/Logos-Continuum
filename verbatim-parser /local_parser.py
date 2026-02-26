@@ -1,6 +1,7 @@
 import os
 import glob
 import time
+import subprocess
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from parser import Parser, resolve_card_workers
@@ -63,6 +64,19 @@ def _parse_single_file(filepath, card_workers, profile):
         "card_indexes": [card.get_index() for card in cards],
     }
 
+
+def _detect_physical_cores():
+    try:
+        output = subprocess.check_output(["sysctl", "-n", "hw.physicalcpu"], text=True).strip()
+        value = int(output)
+        if value > 0:
+            return value
+    except Exception:
+        pass
+
+    logical = os.cpu_count() or 1
+    return max(1, logical // 2)
+
 def run_local_parser():
     done_folder = os.path.join(LOCAL_FOLDER, DONE_SUBDIR)
 
@@ -88,12 +102,22 @@ def run_local_parser():
     run_started = time.perf_counter()
     processed = 0
     failed = 0
-    progress_every = int(os.environ.get("LOCAL_PARSER_PROGRESS_EVERY", "100"))
-    flush_every = max(1, int(os.environ.get("LOCAL_PARSER_FLUSH_EVERY", "100")))
-    card_workers = resolve_card_workers()
-    default_file_workers = max(1, min(os.cpu_count() or 1, 8))
+    progress_every = int(os.environ.get("LOCAL_PARSER_PROGRESS_EVERY", "250"))
+    flush_every = max(1, int(os.environ.get("LOCAL_PARSER_FLUSH_EVERY", "250")))
+
+    if os.environ.get("PARSER_CARD_WORKERS") is not None:
+        card_workers = resolve_card_workers()
+    else:
+        card_workers = 1
+
+    physical_cores = _detect_physical_cores()
+    if physical_cores >= 4:
+        default_file_workers = min(physical_cores, 8)
+    else:
+        default_file_workers = physical_cores
     file_workers = max(1, int(os.environ.get("LOCAL_PARSER_FILE_WORKERS", str(default_file_workers))))
     profile = os.environ.get("PARSER_PROFILE", "0") == "1"
+    verbose_file_logs = os.environ.get("LOCAL_PARSER_VERBOSE_FILE_LOGS", "0") == "1"
 
     search = Search()
     buffered_card_indexes = []
@@ -103,7 +127,7 @@ def run_local_parser():
 
     print(f"⚙️  Write flush interval: every {flush_every} docs")
     print(f"⚙️  Card workers per doc: {card_workers}")
-    print(f"⚙️  File workers: {file_workers}")
+    print(f"⚙️  File workers: {file_workers} (physical_cores={physical_cores})")
     print(f"⚙️  Done folder: {done_folder}")
 
     def flush_buffer(reason):
@@ -145,10 +169,11 @@ def run_local_parser():
                 if buffered_docs >= flush_every:
                     flush_buffer(f"interval={flush_every}")
 
-                print(
-                    f"✅ Parsed {result['filename']} with {len(card_indexes)} cards. "
-                    f"({result['duration_ms']:.1f} ms)"
-                )
+                if verbose_file_logs:
+                    print(
+                        f"✅ Parsed {result['filename']} with {len(card_indexes)} cards. "
+                        f"({result['duration_ms']:.1f} ms)"
+                    )
                 processed += 1
             except Exception as e:
                 print(f"❌ CRASHED on {filename}!")

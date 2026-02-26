@@ -27,6 +27,7 @@ class Parser():
     self.additional_info = additional_info
     self.max_workers = max(1, int(max_workers))
     self.profile = profile
+    self.verbose = profile or os.environ.get("PARSER_VERBOSE", "0") == "1"
 
   def _build_card(self, paragraphs):
     return Card(paragraphs, self.additional_info)
@@ -37,7 +38,8 @@ class Parser():
     current_card = []
     current_card_has_only_tags = True
     card_chunks = []
-    print(f"Parsing {self.filename} (card_workers={self.max_workers})")
+    if self.verbose:
+      print(f"Parsing {self.filename} (card_workers={self.max_workers})")
     
     for paragraph in self.document.paragraphs:
       style_name = paragraph.style.name

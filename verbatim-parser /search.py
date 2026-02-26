@@ -135,6 +135,56 @@ class Search:
     self._seen_filenames.clear()
     self._index_loaded = True
 
+  def get_document_summaries(self):
+    documents = {}
+    for card in self._read_cards():
+      filename = str(card.get("filename", "")).strip()
+      if not filename:
+        continue
+
+      key = filename.lower()
+      if key not in documents:
+        documents[key] = {
+          "filename": filename,
+          "cards_indexed": 0,
+        }
+      documents[key]["cards_indexed"] += 1
+
+    return sorted(documents.values(), key=lambda item: item["filename"].lower())
+
+  def delete_document_from_index(self, filename):
+    target = str(filename).strip().lower()
+    if target == "":
+      return 0
+
+    cards = self._read_cards()
+    kept_cards = []
+    removed = 0
+
+    for card in cards:
+      card_filename = str(card.get("filename", "")).strip().lower()
+      if card_filename == target:
+        removed += 1
+      else:
+        kept_cards.append(card)
+
+    self._reset_index_file()
+    self._append_card_dicts(kept_cards)
+
+    self._seen_ids.clear()
+    self._seen_filenames.clear()
+    for card in kept_cards:
+      card_id = card.get("id")
+      if card_id is not None:
+        self._seen_ids.add(str(card_id))
+
+      card_filename = str(card.get("filename", "")).strip().lower()
+      if card_filename:
+        self._seen_filenames.add(card_filename)
+    self._index_loaded = True
+
+    return removed
+
   def check_filename_in_search(self, filename):
     if not filename:
       return False
