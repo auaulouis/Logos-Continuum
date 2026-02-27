@@ -616,6 +616,10 @@ const SettingsPage = () => {
                     <li><strong>Upload parsing:</strong> drag/drop .docx files or click the drop zone to choose files.</li>
                     <li><strong>Multi-file batches:</strong> you can upload many files at once; non-.docx files are skipped.</li>
                     <li><strong>Progress and timing:</strong> status/details show parsed files, failed files, parse time, and throughput.</li>
+                    <li><strong>What is a Tag:</strong> the card title/label line used to group arguments. In Word, use style <em>Heading 4</em> (also accepts styles named <em>Tag</em>, <em>Tags</em>, <em>Heading 3</em>, or <em>Heading 2</em>).</li>
+                    <li><strong>What is a Cite:</strong> the citation/source line (author, date, publication, link). It should be the line right after the tag block and before body paragraphs.</li>
+                    <li><strong>What is a Paragraph:</strong> the card body text lines that contain the evidence content. In Word, body paragraphs should use <em>Normal</em> style (also accepts <em>Cards</em>, <em>card</em>, <em>Normal (Web)</em>, or <em>Normal/Card</em>).</li>
+                    <li><strong>Word heading setup:</strong> use <em>Heading 4</em> for each card tag, put the citation on the next line, then write evidence paragraphs in <em>Normal</em> style for the most reliable parsing.</li>
                   </ul>
                 </section>
 
