@@ -1,13 +1,21 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as apiService from '../services/api';
 import type { ParsedDocument, ParserSettings } from '../services/api';
 import { AppContext } from '../lib/appContext';
+import packageJson from '../package.json';
 import styles from '../styles/settings.module.scss';
 import indexStyles from '../styles/index.module.scss';
 
 type MessageLevel = 'info' | 'error';
+type DebugLevel = 'info' | 'warn' | 'error';
+type DebugEntry = {
+  id: number;
+  at: number;
+  level: DebugLevel;
+  message: string;
+};
 
 const DEFAULT_PARSER_SETTINGS: ParserSettings = {
   use_parallel_processing: true,
@@ -17,7 +25,10 @@ const DEFAULT_PARSER_SETTINGS: ParserSettings = {
   flush_every_docs: 250,
 };
 
+const APP_VERSION = packageJson.version;
+
 const SettingsPage = () => {
+  type DebugPhase = 'closed' | 'open' | 'closing';
   const { theme, toggleTheme } = useContext(AppContext);
   const [message, setMessage] = useState('');
   const [messageLevel, setMessageLevel] = useState<MessageLevel>('info');
@@ -40,6 +51,80 @@ const SettingsPage = () => {
   const [isDocumentsLoading, setIsDocumentsLoading] = useState(false);
   const [deleteInProgressKey, setDeleteInProgressKey] = useState<string | null>(null);
   const [isManualOpen, setIsManualOpen] = useState(false);
+  const [debugPhase, setDebugPhase] = useState<DebugPhase>('closed');
+  const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([
+    { id: 1, at: Date.now(), level: 'info', message: 'Settings debug console initialized' },
+  ]);
+  const debugLogElement = useRef<HTMLDivElement | null>(null);
+  const debugCloseTimer = useRef<number | null>(null);
+
+  const isDebugOpen = debugPhase === 'open';
+  const isDebugRendered = debugPhase !== 'closed';
+
+  const closeDebugConsole = useCallback(() => {
+    if (debugPhase === 'closing' || debugPhase === 'closed') {
+      return;
+    }
+    setDebugPhase('closing');
+    if (debugCloseTimer.current !== null) {
+      window.clearTimeout(debugCloseTimer.current);
+    }
+    debugCloseTimer.current = window.setTimeout(() => {
+      setDebugPhase('closed');
+      debugCloseTimer.current = null;
+    }, 220);
+  }, [debugPhase]);
+
+  const openDebugConsole = useCallback(() => {
+    if (debugCloseTimer.current !== null) {
+      window.clearTimeout(debugCloseTimer.current);
+      debugCloseTimer.current = null;
+    }
+    setDebugPhase('open');
+  }, []);
+
+  const toggleDebugConsole = useCallback(() => {
+    if (debugPhase === 'open') {
+      closeDebugConsole();
+    } else {
+      openDebugConsole();
+    }
+  }, [debugPhase, closeDebugConsole, openDebugConsole]);
+
+  const addDebugEntry = useCallback((level: DebugLevel, message: string) => {
+    setDebugEntries((prev) => {
+      const next: DebugEntry[] = [...prev, {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        at: Date.now(),
+        level,
+        message,
+      }];
+      return next.slice(-140);
+    });
+  }, []);
+
+  const formattedDebugEntries = useMemo(() => debugEntries.map((entry) => {
+    const timestamp = new Date(entry.at).toLocaleTimeString();
+    return {
+      ...entry,
+      line: `[${timestamp}] ${entry.level.toUpperCase()} ${entry.message}`,
+    };
+  }), [debugEntries]);
+
+  const onCopyDebugLogs = useCallback(async () => {
+    const payload = formattedDebugEntries.map((entry) => entry.line).join('\n');
+    if (!payload) {
+      addDebugEntry('warn', 'Copy logs skipped: no logs to copy');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(payload);
+      addDebugEntry('info', `Copied ${formattedDebugEntries.length} log lines to clipboard`);
+    } catch {
+      addDebugEntry('error', 'Failed to copy logs to clipboard');
+    }
+  }, [formattedDebugEntries, addDebugEntry]);
 
   const updateMessage = (text: string, level: MessageLevel = 'info') => {
     setMessage(text);
@@ -51,10 +136,12 @@ const SettingsPage = () => {
     try {
       const response = await apiService.getParserSettings();
       setParserSettings(response.settings);
+      addDebugEntry('info', 'Parser settings loaded');
     } catch {
       setParserSettingsError('Failed to load parser settings.');
+      addDebugEntry('error', 'Failed to load parser settings');
     }
-  }, []);
+  }, [addDebugEntry]);
 
   const loadParsedDocuments = useCallback(async () => {
     setIsDocumentsLoading(true);
@@ -64,17 +151,31 @@ const SettingsPage = () => {
       const docs = Array.isArray(response.documents) ? response.documents : [];
       docs.sort((a, b) => a.filename.localeCompare(b.filename));
       setDocuments(docs);
+      addDebugEntry('info', `Loaded ${docs.length} parsed document(s)`);
     } catch {
       setDocumentsError('Failed to load parsed documents.');
+      addDebugEntry('error', 'Failed to load parsed documents');
     } finally {
       setIsDocumentsLoading(false);
     }
-  }, []);
+  }, [addDebugEntry]);
 
   useEffect(() => {
     loadParserSettings();
     loadParsedDocuments();
   }, [loadParserSettings, loadParsedDocuments]);
+
+  useEffect(() => {
+    if (debugLogElement.current) {
+      debugLogElement.current.scrollTop = debugLogElement.current.scrollHeight;
+    }
+  }, [formattedDebugEntries, isDebugOpen]);
+
+  useEffect(() => () => {
+    if (debugCloseTimer.current !== null) {
+      window.clearTimeout(debugCloseTimer.current);
+    }
+  }, []);
 
   const onSaveParserSettings = async () => {
     setIsSavingParserSettings(true);
@@ -90,9 +191,11 @@ const SettingsPage = () => {
       const response = await apiService.updateParserSettings(payload);
       setParserSettings(response.settings);
       updateMessage('Parser settings saved.');
+      addDebugEntry('info', 'Parser settings saved');
     } catch {
       setParserSettingsError('Failed to save parser settings.');
       updateMessage('Failed to save parser settings.', 'error');
+      addDebugEntry('error', 'Failed to save parser settings');
     } finally {
       setIsSavingParserSettings(false);
     }
@@ -130,9 +233,11 @@ const SettingsPage = () => {
       }
 
       updateMessage(`${actionNotes.join(' + ')}${failedFileDeletes > 0 ? ` (${failedFileDeletes} file deletions failed)` : ''}`);
+      addDebugEntry('info', `Clear action complete: ${actionNotes.join(' + ') || 'no-op'}`);
       await loadParsedDocuments();
     } catch {
       updateMessage('Failed to run clear action.', 'error');
+      addDebugEntry('error', 'Failed to run clear action');
     } finally {
       setIsClearingIndex(false);
     }
@@ -161,10 +266,12 @@ const SettingsPage = () => {
           ? `Removed ${document.filename} from parsed index.`
           : `Removed ${document.filename} from uploaded docs folder.`,
       );
+      addDebugEntry('info', `Deleted ${document.filename} from ${target}`);
       await loadParsedDocuments();
     } catch {
       setDocumentsError('Failed to delete document for selected target.');
       updateMessage('Delete failed for selected document.', 'error');
+      addDebugEntry('error', `Delete failed for ${document.filename} (${target})`);
     } finally {
       setDeleteInProgressKey(null);
     }
@@ -388,8 +495,8 @@ const SettingsPage = () => {
             </section>
           </div>
 
-          <div className={styles.column}>
-            <section className={styles.card}>
+          <div className={`${styles.column} ${styles.utilityGrid}`}>
+            <section className={`${styles.card} ${styles.manageCard}`}>
               <h2 className={styles.sectionTitle}>Manage Documents</h2>
               <p className={styles.meta}>Open the document manager popup to search, select, and delete documents.</p>
               <div className={styles.actions}>
@@ -399,7 +506,7 @@ const SettingsPage = () => {
               </div>
             </section>
 
-            <section className={styles.card}>
+            <section className={`${styles.card} ${styles.manualCard}`}>
               <h2 className={styles.sectionTitle}>Manual</h2>
               <p className={styles.meta}>Open the complete app guide for parsing, search, editing, export, and settings workflows.</p>
               <div className={styles.actions}>
@@ -408,8 +515,73 @@ const SettingsPage = () => {
                 </button>
               </div>
             </section>
+
+            <section className={`${styles.card} ${styles.aboutCard}`}>
+              <h2 className={styles.sectionTitle}>About</h2>
+              <p className={styles.meta}><strong>Version:</strong> {APP_VERSION}</p>
+              <p className={styles.meta}><strong>Developer:</strong> auaulouis</p>
+              <p className={styles.meta}>
+                <strong>Open Source:</strong> MIT License. You are permitted to use, copy, modify, merge, publish,
+                distribute, sublicense, and/or sell copies of the software, subject to the MIT license terms.
+              </p>
+            </section>
+
+            <section className={`${styles.card} ${styles.debugCard}`}>
+              <h2 className={styles.sectionTitle}>Debug Console</h2>
+              <p className={styles.meta}>Open runtime logs directly from Settings.</p>
+              <div className={styles.actions}>
+                <button type="button" className={styles.secondaryBtn} onClick={toggleDebugConsole}>
+                  {isDebugOpen ? 'Close Debug Console' : 'Open Debug Console'}
+                </button>
+              </div>
+            </section>
           </div>
         </div>
+
+        {isDebugRendered && (
+          <div
+            className={`${indexStyles['debug-console']} ${debugPhase === 'closing' ? indexStyles['debug-console-closing'] : ''}`}
+            role="dialog"
+            aria-label="Debug console"
+          >
+            <div className={indexStyles['debug-console-header']}>
+              <span>logs@logos-continuum:~$</span>
+              <div className={indexStyles['debug-console-actions']}>
+                <button
+                  type="button"
+                  className={indexStyles['debug-console-btn']}
+                  onClick={onCopyDebugLogs}
+                >
+                  copy logs
+                </button>
+                <button
+                  type="button"
+                  className={indexStyles['debug-console-btn']}
+                  onClick={() => setDebugEntries([])}
+                >
+                  clear
+                </button>
+                <button
+                  type="button"
+                  className={indexStyles['debug-console-btn']}
+                  onClick={closeDebugConsole}
+                >
+                  close
+                </button>
+              </div>
+            </div>
+            <div ref={debugLogElement} className={indexStyles['debug-console-body']}>
+              {formattedDebugEntries.length === 0 && (
+                <div className={indexStyles['debug-line-muted']}>[empty] no events yet</div>
+              )}
+              {formattedDebugEntries.map((entry) => (
+                <div key={entry.id} className={`${indexStyles['debug-line']} ${indexStyles[`debug-line-${entry.level}`]}`}>
+                  {entry.line}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {isManualOpen && (
           <div className={styles.manualOverlay} role="presentation" onClick={closeManual}>
@@ -427,54 +599,58 @@ const SettingsPage = () => {
 
               <div className={styles.manualBody}>
                 <section className={styles.manualSection}>
-                  <h4>1) What this app does</h4>
+                  <h4>1) What Logos Continuum does</h4>
                   <p>
-                    Logos Continuum is a debate card workflow app. You can upload .docx files to parse cards,
-                    search cards by text or citation, open and edit full cards, copy cards, export saved edits to
-                    .docx, manage parsed documents, and tune parser behavior in Settings.
+                    Logos Continuum is a local debate-card workflow app for parsing, searching, reviewing, editing,
+                    and exporting evidence cards. The normal flow is: upload .docx files on Home, search on Query,
+                    edit selected cards, then export saved edits to a .docx.
                   </p>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>2) Home page: quick search + parsing uploads</h4>
+                  <h4>2) Home page: search + parse uploads</h4>
                   <ul>
-                    <li><strong>Search from home:</strong> enter a query in the Search box and press Enter or click <em>Search</em>. You will be routed to Query with that search.</li>
-                    <li><strong>Go to settings:</strong> click <em>Settings</em> in the top-right corner.</li>
-                    <li><strong>Open debug console:</strong> click the bug icon to open runtime logs; use <em>copy logs</em>, <em>clear</em>, and <em>close</em>.</li>
-                    <li><strong>Parse documents:</strong> drag and drop one or more .docx files into the upload zone, or click the zone to choose files.</li>
-                    <li><strong>Multi-file support:</strong> you can upload multiple files at once; only .docx files are parsed.</li>
-                    <li><strong>Parsing feedback:</strong> status text shows success/failure counts and details list parsed and failed filenames.</li>
+                    <li><strong>Search from Home:</strong> type a query and press Enter or click <em>Submit</em> to open Query with that search.</li>
+                    <li><strong>Open Settings:</strong> use the <em>Settings</em> button in the top-right corner.</li>
+                    <li><strong>Debug console:</strong> click the bug icon to open runtime logs; you can <em>copy logs</em>, <em>clear</em>, and <em>close</em>.</li>
+                    <li><strong>Upload parsing:</strong> drag/drop .docx files or click the drop zone to choose files.</li>
+                    <li><strong>Multi-file batches:</strong> you can upload many files at once; non-.docx files are skipped.</li>
+                    <li><strong>Progress and timing:</strong> status/details show parsed files, failed files, parse time, and throughput.</li>
                   </ul>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>3) Query page: search, browse, and select cards</h4>
+                  <h4>3) Query page: search syntax and buttons</h4>
                   <ul>
-                    <li><strong>Main search:</strong> use the top Search field to run full-text card searches.</li>
-                    <li><strong>Advanced citation search:</strong> click <em>Advanced Search</em>, enter citation text in <em>Search by cite...</em>, then press Enter to apply citation matching.</li>
-                    <li><strong>URL-driven state:</strong> search and citation filters are reflected in URL query parameters, so browser navigation preserves state.</li>
-                    <li><strong>Results panel:</strong> matching cards appear in the left results list with tag/citation preview and source download links.</li>
-                    <li><strong>Infinite loading:</strong> more results load automatically when you scroll near the bottom while more matches exist.</li>
-                    <li><strong>Select a card:</strong> click any result to open its full card content in the right detail panel.</li>
-                    <li><strong>Source links:</strong> each card/result can display one or more source links; local paths can be copied from the copy icon.</li>
-                    <li><strong>Query debug console:</strong> bug icon opens logs for search requests/responses and card loading; you can copy/clear/close logs.</li>
+                    <li><strong>Main Search button:</strong> the top search field runs full-text search when you press Enter or click <em>Search</em>.</li>
+                    <li><strong>Citation search syntax:</strong> append <code>cite:your text</code> in the same search box to match citation text. Example: <code>nuclear deterrence cite:brookings</code>.</li>
+                    <li><strong>Citation-only queries:</strong> you can use only <code>cite:...</code> (for example <code>cite:harvard law review</code>) to search by citation without tag/paragraph text.</li>
+                    <li><strong>URL state:</strong> query and citation filters are stored in URL parameters so refresh/back/forward keep search context.</li>
+                    <li><strong>Results tabs:</strong> use <em>Tag Matches</em> and <em>Paragraph Matches</em> to switch match mode views.</li>
+                    <li><strong>Pagination buttons:</strong> use <em>Previous</em>, page numbers, and <em>Next</em> to move through result pages.</li>
+                    <li><strong>Select a card:</strong> click any result row to load the full card in the detail panel.</li>
+                    <li><strong>Query debug console:</strong> bug icon logs search requests/responses and card loading events.</li>
                   </ul>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>4) Card actions (view mode)</h4>
+                  <h4>4) Going through cards efficiently</h4>
                   <ul>
-                    <li><strong>Edit:</strong> click <em>Edit</em> to enter full card editing mode for the selected card.</li>
-                    <li><strong>Copy:</strong> click <em>Copy</em> to copy the selected card with formatting; a copied toast confirms the action.</li>
-                    <li><strong>Export Saved Edits:</strong> click <em>Export Saved Edits (N)</em> to generate a .docx containing all locally saved card edits.</li>
-                    <li><strong>Style controls:</strong> use color swatches and font dropdown to control highlight color + font preferences used in card display and export.</li>
+                    <li><strong>Read left, edit right:</strong> keep the results list on the left and selected card on the right to move quickly between evidence cards.</li>
+                    <li><strong>Card metadata:</strong> each result shows tag preview, citation snippet, and card identifier (CID) when available.</li>
+                    <li><strong>Source links:</strong> cards can include one or more source URLs/paths through the download/source area.</li>
+                    <li><strong>Copy action:</strong> click <em>Copy</em> to copy formatted card content; a <em>Copied</em> toast confirms success.</li>
+                    <li><strong>Edit action:</strong> click <em>Edit</em> on the selected card to enter editing mode.</li>
+                    <li><strong>Export Saved Edits:</strong> click <em>Export Saved Edits (N)</em> to export all saved local edits into a single .docx.</li>
+                    <li><strong>Style controls:</strong> pick highlight color and font via swatches/dropdown; these preferences affect display and export output.</li>
                   </ul>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>5) Card editor (edit mode)</h4>
+                  <h4>5) Card editor: how editing works</h4>
                   <p>
-                    In edit mode you can modify tag, tag subtext, citation, and all body paragraphs inline. The editor toolbar lets you apply and remove formatting.
+                    In edit mode you can directly update tag, tag-sub text, citation, and all card body paragraphs.
+                    Selection-based formatting is applied from the editor toolbar.
                   </p>
                   <ul>
                     <li><strong>Highlight:</strong> select text and click the highlighter button (shortcut <strong>F11</strong>).</li>
@@ -483,26 +659,26 @@ const SettingsPage = () => {
                     <li><strong>Italic:</strong> select text and click italic (shortcut <strong>F5</strong>).</li>
                     <li><strong>Clear formatting:</strong> removes styling from the selected range.</li>
                     <li><strong>Undo/Redo:</strong> use toolbar buttons or keyboard shortcuts <strong>Cmd/Ctrl+Z</strong> and <strong>Cmd/Ctrl+Shift+Z</strong>.</li>
-                    <li><strong>Copy while editing:</strong> copy remains available in the edit toolbar area.</li>
-                    <li><strong>Cancel:</strong> exits edit mode and discards unsaved changes for the current editing session.</li>
-                    <li><strong>Save:</strong> saves your edited card locally as a saved edit and exits edit mode.</li>
+                    <li><strong>Copy while editing:</strong> copy remains available from the top toolbar while in edit mode.</li>
+                    <li><strong>Cancel:</strong> exits edit mode and discards unsaved draft changes from that editing session.</li>
+                    <li><strong>Save:</strong> writes changes to local saved-edits storage, updates the card view, and exits edit mode.</li>
                   </ul>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>6) Saved edits and export behavior</h4>
+                  <h4>6) Saved edits and export details</h4>
                   <ul>
-                    <li><strong>Local persistence:</strong> saved card edits are stored locally in your browser and reapplied when a card is reopened.</li>
-                    <li><strong>Export format:</strong> exported .docx files preserve tag/cite/body and formatting (highlight, bold, underline, italic) from saved edits.</li>
-                    <li><strong>Source tracking:</strong> export includes source document labels derived from card/source URLs and available metadata.</li>
-                    <li><strong>Style-aware export:</strong> selected font and highlight color preferences are applied in generated .docx output.</li>
+                    <li><strong>Where edits live:</strong> saved edits are persisted locally (browser storage), so they remain available between sessions on the same machine/profile.</li>
+                    <li><strong>What is exported:</strong> tag, tag-sub, citation, body, and text formatting (highlight/bold/underline/italic) from saved edits.</li>
+                    <li><strong>Source labels:</strong> export attempts to include source document labels resolved from card metadata and URLs.</li>
+                    <li><strong>Style-aware export:</strong> selected font/highlight settings are applied in generated .docx output.</li>
                   </ul>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>7) Settings page features</h4>
+                  <h4>7) Settings page: complete feature guide</h4>
                   <ul>
-                    <li><strong>Appearance:</strong> toggle between light and dark mode.</li>
+                    <li><strong>Appearance / dark mode:</strong> use <em>Switch to Dark Mode</em> or <em>Switch to Light Mode</em>. This updates app surfaces, text contrast, buttons, tabs, and highlight rendering for readability.</li>
                     <li><strong>Clear Parsed Cards:</strong>
                       <ul>
                         <li><strong>Clear parsed cards from index:</strong> removes indexed card data from the search index.</li>
@@ -531,28 +707,31 @@ const SettingsPage = () => {
                         <li><strong>Delete File:</strong> per-row delete from uploaded docs folder only.</li>
                       </ul>
                     </li>
+                    <li><strong>Manual:</strong> opens this in-app guide.</li>
+                    <li><strong>Settings debug console:</strong> logs runtime and settings actions; supports copy/clear/close.</li>
                   </ul>
                 </section>
 
                 <section className={styles.manualSection}>
-                  <h4>8) Typical end-to-end workflow</h4>
+                  <h4>8) End-to-end workflow (recommended)</h4>
                   <ol>
-                    <li>Upload .docx files on the home page and wait for parsing status to complete.</li>
-                    <li>Run a search from home or directly on Query.</li>
-                    <li>Select a result card and review citation/body content.</li>
-                    <li>Enter edit mode, make text/format updates, then save.</li>
-                    <li>Repeat for additional cards, then use <em>Export Saved Edits</em> to download the final .docx.</li>
-                    <li>Use Settings to tune parser performance or clean documents/index state as needed.</li>
+                    <li>Upload and parse .docx files on Home until status confirms parsing completed.</li>
+                    <li>Open Query and run search with optional citation filter syntax: <code>cite:...</code>.</li>
+                    <li>Switch between <em>Tag Matches</em> and <em>Paragraph Matches</em>, then paginate with <em>Previous/Next</em>.</li>
+                    <li>Select cards, review content, and edit the ones you want to keep.</li>
+                    <li>Save edits, continue across multiple cards, then export all saved edits to .docx.</li>
+                    <li>Use Settings for theme, parser tuning, and document/index maintenance.</li>
                   </ol>
                 </section>
 
                 <section className={styles.manualSection}>
                   <h4>9) Troubleshooting quick tips</h4>
                   <ul>
-                    <li>If no results appear, confirm your query/citation text and uploaded documents.</li>
-                    <li>If a feature seems unresponsive, open the bug/debug console and review/copy logs.</li>
-                    <li>If parsing does not reflect expected docs, check Manage Documents for index/folder state.</li>
-                    <li>If performance is slow during heavy parsing, lower or tune worker counts in Parser Settings.</li>
+                    <li>If no results appear, verify documents are parsed/indexed and try broader search text first.</li>
+                    <li>If citation filtering seems off, check syntax is exactly <code>cite:your text</code> in the main search box.</li>
+                    <li>If actions seem unresponsive, open the page debug console (bug icon) and copy logs for diagnosis.</li>
+                    <li>If expected files are missing, check <em>Manage Documents</em> for in-index and in-folder status.</li>
+                    <li>If parsing is slow, tune worker counts in <em>Parser Settings</em> based on your CPU capacity.</li>
                   </ul>
                 </section>
               </div>

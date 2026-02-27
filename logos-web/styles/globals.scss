@@ -179,6 +179,10 @@ a {
   min-height: 0;
 }
 
+.query-page .page-row + .page-row {
+  margin-top: 14px;
+}
+
 .query-shell {
   width: 100vw;
   min-height: 100vh;

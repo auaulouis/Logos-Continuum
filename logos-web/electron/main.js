@@ -1,0 +1,251 @@
+const { app, BrowserWindow } = require('electron');
+const path = require('path');
+const http = require('http');
+const net = require('net');
+const fs = require('fs');
+const { spawn } = require('child_process');
+const next = require('next');
+
+let mainWindow;
+let nextServer;
+let backendProcess;
+
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function copyDirectoryMissingOnly(sourceDir, destinationDir) {
+  if (!fs.existsSync(sourceDir)) {
+    return;
+  }
+
+  ensureDir(destinationDir);
+  const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationPath = path.join(destinationDir, entry.name);
+
+    if (entry.isDirectory()) {
+      copyDirectoryMissingOnly(sourcePath, destinationPath);
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    if (!fs.existsSync(destinationPath)) {
+      fs.copyFileSync(sourcePath, destinationPath);
+    }
+  }
+}
+
+function resolvePersistentLocalDocsDir() {
+  try {
+    const documentsDir = app.getPath('documents');
+    return path.join(documentsDir, 'Logos Continuum', 'local_docs');
+  } catch {
+    return path.join(app.getPath('userData'), 'local_docs');
+  }
+}
+
+function preparePersistentLocalDocsDir() {
+  const persistentLocalDocsDir = resolvePersistentLocalDocsDir();
+  const legacyLocalDocsDir = path.join(app.getPath('userData'), 'local_docs');
+
+  ensureDir(persistentLocalDocsDir);
+
+  if (legacyLocalDocsDir !== persistentLocalDocsDir && fs.existsSync(legacyLocalDocsDir)) {
+    copyDirectoryMissingOnly(legacyLocalDocsDir, persistentLocalDocsDir);
+  }
+
+  return persistentLocalDocsDir;
+}
+
+function getBackendRoot() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'backend');
+  }
+
+  return path.resolve(getAppDir(), '..', 'verbatim-parser ');
+}
+
+function resolveBackendPython(backendRoot) {
+  const bundledVenvPython = path.join(backendRoot, '.venv', 'bin', 'python3');
+  if (require('fs').existsSync(bundledVenvPython)) {
+    return bundledVenvPython;
+  }
+
+  return 'python3';
+}
+
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port, host: '127.0.0.1' });
+    socket.once('connect', () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
+
+function waitForBackend(timeoutMs = 20000) {
+  const start = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      const open = await isPortOpen(5001);
+      if (open) {
+        resolve(true);
+        return;
+      }
+
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error('Parser backend did not start on port 5001 in time'));
+        return;
+      }
+
+      setTimeout(tick, 300);
+    };
+
+    tick();
+  });
+}
+
+async function startParserBackend() {
+  const alreadyRunning = await isPortOpen(5001);
+  if (alreadyRunning) {
+    return;
+  }
+
+  const backendRoot = getBackendRoot();
+  const pythonExec = resolveBackendPython(backendRoot);
+  const localDocsDir = preparePersistentLocalDocsDir();
+
+  const env = {
+    ...process.env,
+    LOCAL_DOCS_FOLDER: localDocsDir,
+    PARSER_SETTINGS_PATH: path.join(localDocsDir, 'parser_settings.json'),
+    PORT: '5001',
+  };
+
+  backendProcess = spawn(pythonExec, ['api.py'], {
+    cwd: backendRoot,
+    env,
+    stdio: 'inherit',
+  });
+
+  backendProcess.on('exit', (code, signal) => {
+    if (!app.isQuitting) {
+      console.error(`Parser backend exited unexpectedly (code=${code}, signal=${signal})`);
+    }
+  });
+
+  await waitForBackend();
+}
+
+function getAppDir() {
+  return app.getAppPath();
+}
+
+function waitForPort(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port, host: '127.0.0.1' });
+    socket.once('connect', () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
+
+async function findOpenPort(start = 3001, max = 3015) {
+  for (let port = start; port <= max; port += 1) {
+    const inUse = await waitForPort(port);
+    if (!inUse) {
+      return port;
+    }
+  }
+
+  return 0;
+}
+
+async function startNextServer() {
+  const appDir = getAppDir();
+  const nextApp = next({
+    dev: false,
+    dir: appDir,
+    conf: {
+      distDir: '.next',
+    },
+  });
+
+  const handle = nextApp.getRequestHandler();
+  await nextApp.prepare();
+
+  const port = await findOpenPort();
+  if (!port) {
+    throw new Error('No available port between 3001 and 3015');
+  }
+
+  await new Promise((resolve, reject) => {
+    nextServer = http.createServer((req, res) => handle(req, res));
+    nextServer.once('error', reject);
+    nextServer.listen(port, '127.0.0.1', resolve);
+  });
+
+  return `http://127.0.0.1:${port}`;
+}
+
+async function createWindow() {
+  await startParserBackend();
+  const appUrl = await startNextServer();
+  const isMac = process.platform === 'darwin';
+
+  mainWindow = new BrowserWindow({
+    width: 1360,
+    height: 860,
+    minWidth: 1080,
+    minHeight: 720,
+    title: '',
+    autoHideMenuBar: true,
+    titleBarStyle: isMac ? 'default' : undefined,
+    vibrancy: isMac ? 'titlebar' : undefined,
+    visualEffectState: isMac ? 'active' : undefined,
+    backgroundColor: '#111111',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  await mainWindow.loadURL(appUrl);
+}
+
+app.whenReady().then(createWindow).catch((error) => {
+  console.error('Failed to start desktop app:', error);
+  app.quit();
+});
+
+app.on('window-all-closed', () => {
+  app.isQuitting = true;
+  if (nextServer) {
+    nextServer.close();
+  }
+
+  if (backendProcess && !backendProcess.killed) {
+    backendProcess.kill('SIGTERM');
+  }
+
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});

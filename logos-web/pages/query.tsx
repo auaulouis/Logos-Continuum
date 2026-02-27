@@ -30,6 +30,7 @@ import {
 } from '../lib/constants';
 
 type DebugLevel = 'info' | 'warn' | 'error';
+type SearchTab = 'tag' | 'paragraph';
 type DebugEntry = {
   id: number;
   at: number;
@@ -40,20 +41,19 @@ type DebugEntry = {
 const QueryPage = () => {
   type DebugPhase = 'closed' | 'open' | 'closing';
   const [query, setQuery] = useState(''); // current user input in the search box
-  const [citeSearch, setCiteSearch] = useState(''); // current user input in the cite box
-  const [results, setResults] = useState<Array<SearchResult>>([]); // results returned from the search API
+  const [tabResults, setTabResults] = useState<Record<SearchTab, Array<SearchResult>>>({ tag: [], paragraph: [] });
+  const [tabHasMoreResults, setTabHasMoreResults] = useState<Record<SearchTab, boolean>>({ tag: true, paragraph: true });
+  const [tabCounts, setTabCounts] = useState<Record<SearchTab, number>>({ tag: 0, paragraph: 0 });
   const [cards, setCards] = useState<Record<string, any>>({}); // map of IDs to currently retrieved cards
   const [selectedCard, setSelectedCard] = useState('');
   const [loading, setLoading] = useState(false);
-  const [scrollCursor, setScrollCursor] = useState(0);
-  const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [searchDurationsMs, setSearchDurationsMs] = useState<Record<SearchTab, number>>({ tag: 0, paragraph: 0 });
   const [schools, setSchools] = useState<Array<SchoolOption>>([]); // list of schoools returned from the API
   const router = useRouter();
   const { query: routerQuery } = router;
   const {
     search: urlSearch, start_date, end_date, exclude_sides, exclude_division, exclude_years, exclude_schools, cite_match, use_personal,
   } = routerQuery;
-  const [lastQuery, setLastQuery] = useState({});
   const [downloadUrls, setDownloadUrls] = useState<Array<string>>([]);
   const [editRequest, setEditRequest] = useState(0);
   const [isCardEditing, setIsCardEditing] = useState(false);
@@ -317,37 +317,34 @@ const QueryPage = () => {
   };
 
   const onSearch = async () => {
-    if (query) {
-      updateUrl({ search: encodeURI(query.trim()) });
-    } else if (query === '') {
-      updateUrl({}, ['search']);
+    const trimmedQuery = query.trim();
+    const citeTokenMatch = trimmedQuery.match(/(?:^|\s)cite\s*:\s*(.+)$/i);
+    const citeMatchValue = citeTokenMatch?.[1]?.trim() || '';
+    const searchWithoutCite = citeTokenMatch
+      ? trimmedQuery.slice(0, citeTokenMatch.index).trim()
+      : trimmedQuery;
+
+    if (!trimmedQuery) {
+      updateUrl({}, ['search', 'cite_match']);
+      return;
     }
+
+    updateUrl({
+      ...(searchWithoutCite && { search: encodeURI(searchWithoutCite) }),
+      ...(citeMatchValue && { cite_match: encodeURI(citeMatchValue) }),
+    }, [
+      ...(!searchWithoutCite ? ['search'] : []),
+      ...(!citeMatchValue ? ['cite_match'] : []),
+    ]);
   };
 
-  /**
-   * Initiates a new search with the current query, date range, and other query parameters from the API.
-   * @param query The query to search for.
-   * @param c The cursor to use for pagination.
-   * @param replaceResults Whether to replace the current results with the new results.
-   */
-  const searchRequest = (query = '', c = 0, replaceResults = false) => {
-    const q = {
-      query,
-      cursor: c,
-      ...(start_date) && { start_date },
-      ...(end_date) && { end_date },
-      ...(exclude_sides) && { exclude_sides },
-      ...(exclude_division) && { exclude_division },
-      ...(exclude_years) && { exclude_years },
-      ...(exclude_schools) && { exclude_schools },
-      ...(cite_match) && { cite_match },
-      ...(use_personal) && { use_personal },
-    };
-
-    if (!loading || JSON.stringify(q) !== JSON.stringify(lastQuery)) {
-      setLoading(true);
-      addDebugEntry('info', `Search requested: "${query}" (cursor ${c})`);
-      apiService.search(query, c, {
+  const searchRequest = async (tab: SearchTab, searchText = '', page = 0): Promise<boolean> => {
+    const c = Math.max(0, page) * 30;
+    const startedAt = performance.now();
+    addDebugEntry('info', `Search requested: "${searchText}" [${tab}] (cursor ${c})`);
+    try {
+      const response = await apiService.search(searchText, c, {
+        match_mode: tab,
         ...(start_date) && { start_date: Math.floor(new Date(start_date as string).getTime() / 1000) },
         ...(end_date) && { end_date: Math.floor(new Date(end_date as string).getTime() / 1000) },
         ...(exclude_sides) && { exclude_sides },
@@ -357,44 +354,51 @@ const QueryPage = () => {
         ...(cite_match) && { cite_match },
         ...(use_personal) && { use_personal },
         ...!!(session && session.accessToken) && { access_token: session.accessToken },
-      }).then((response) => {
-        const { results: responseResults, cursor } = response;
-
-        if (replaceResults) setResults(responseResults);
-        else setResults((prevResults) => { return [...prevResults, ...responseResults]; });
-
-        setScrollCursor(cursor);
-        setHasMoreResults(responseResults.length > 0 && cursor > c);
-        addDebugEntry('info', `Search response: ${responseResults.length} results (next cursor ${cursor})`);
-      }).catch((error) => {
-        const message = error instanceof Error ? error.message : 'Search request failed';
-        addDebugEntry('error', message);
-        setHasMoreResults(false);
-      }).finally(() => {
-        setLoading(false);
       });
+      const { results: responseResults, cursor, totalCount } = response;
 
-      setLastQuery(q);
+      setTabResults((prev) => ({ ...prev, [tab]: responseResults }));
+      setTabHasMoreResults((prev) => ({ ...prev, [tab]: responseResults.length >= 30 && cursor > c }));
+      setTabCounts((prev) => ({ ...prev, [tab]: Number.isFinite(totalCount) ? Number(totalCount) : responseResults.length }));
+      setSearchDurationsMs((prev) => ({ ...prev, [tab]: performance.now() - startedAt }));
+      addDebugEntry('info', `Search response: ${responseResults.length} results for [${tab}] (next cursor ${cursor})`);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Search request failed';
+      addDebugEntry('error', message);
+      setTabHasMoreResults((prev) => ({ ...prev, [tab]: false }));
+      return false;
     }
   };
 
-  const loadMore = async () => {
-    if (hasMoreResults && ((urlSearch && urlSearch.length > 0) || cite_match)) {
-      searchRequest(decodeURI(urlSearch as string || ''), scrollCursor, false);
+  const loadPage = async (tab: SearchTab, page: number): Promise<boolean> => {
+    if ((urlSearch && urlSearch.length > 0) || cite_match) {
+      return searchRequest(tab, decodeURI(urlSearch as string || ''), page);
     }
+    return false;
   };
 
   // triggered for any changes in the URL
   useEffect(() => {
     // initiates a new search if the query exists
     if (status !== 'loading' && ((urlSearch && urlSearch.length > 0) || cite_match)) {
-      setQuery(decodeURI(urlSearch as string || ''));
-      setHasMoreResults(true);
-      searchRequest(decodeURI(urlSearch as string || ''), 0, true);
-    }
+      const decodedQuery = decodeURI(urlSearch as string || '');
+      const decodedCiteMatch = cite_match ? decodeURI(cite_match as string) : '';
+      setQuery(`${decodedQuery}${decodedCiteMatch ? ` cite:${decodedCiteMatch}` : ''}`.trim());
+      setTabResults({ tag: [], paragraph: [] });
+      setTabHasMoreResults({ tag: true, paragraph: true });
+      setTabCounts({ tag: 0, paragraph: 0 });
+      setSearchDurationsMs({ tag: 0, paragraph: 0 });
 
-    if (cite_match) {
-      setCiteSearch(cite_match as string);
+      void (async () => {
+        setLoading(true);
+        try {
+          await searchRequest('tag', decodedQuery, 0);
+          await searchRequest('paragraph', decodedQuery, 0);
+        } finally {
+          setLoading(false);
+        }
+      })();
     }
 
     // update the date range based on changes to the URL
@@ -463,14 +467,6 @@ const QueryPage = () => {
       updateUrl({ exclude_schools: schools.filter((opt) => !s.find((school) => school.name === opt.name)).map((opt) => opt.name).join(',') });
     } else {
       updateUrl({}, ['exclude_schools']);
-    }
-  };
-
-  const onCiteSearch = (citeSearch: string) => {
-    if (citeSearch.length > 0) {
-      updateUrl({ cite_match: citeSearch, search: query });
-    } else {
-      updateUrl({}, ['cite_match']);
     }
   };
 
@@ -612,21 +608,21 @@ const QueryPage = () => {
                   onChange={setQuery}
                   onSearch={onSearch}
                   loading={loading}
-                  onCiteSearch={onCiteSearch}
-                  onCiteChange={setCiteSearch}
-                  citeValue={citeSearch}
                 />
               </div>
 
               <div className="page-row">
                 <SearchResults
-                  results={results}
+                  tabResults={tabResults}
+                  tabCounts={tabCounts}
+                  searchDurationsMs={searchDurationsMs}
+                  query={query}
                   setSelected={setSelectedCard}
                   cards={cards}
                   getCard={getCard}
-                  loadMore={loadMore}
+                  loadPage={loadPage}
                   setDownloadUrls={setDownloadUrls}
-                  hasMoreResults={hasMoreResults}
+                  tabHasMoreResults={tabHasMoreResults}
                 />
                 <div className={queryStyles['card-panel']}>
                   <CardDetail

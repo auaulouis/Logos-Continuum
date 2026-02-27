@@ -111,16 +111,19 @@ yarn dev
 ## Query page (`/query`)
 
 1. **Search**: run term search from the top input.
-2. **Advanced Search**: use **Search by cite...** for cite matching.
-3. **Results list**:
-	- Infinite scrolling loads more results automatically
+   - Citation filter syntax is inline: `cite:<text>`
+   - Example: `nuclear deterrence cite:brookings`
+   - Citation-only search is also supported: `cite:harvard law review`
+2. **Results list**:
+	- Use **Tag Matches** and **Paragraph Matches** tabs
+	- Use **Previous / page buttons / Next** for pagination
 	- Click a result to open full card details
-4. **Card actions**:
+3. **Card actions**:
 	- **Edit** the selected card
 	- **Copy** card content
 	- **Export Saved Edits (N)** exports saved edits to DOCX
 	- **StyleSelect** changes copy/export styling
-5. **Saved edits behavior**:
+4. **Saved edits behavior**:
 	- Card edits are persisted in browser `localStorage`
 	- Export includes saved edits and resolved source document labels
 
@@ -129,6 +132,12 @@ yarn dev
 - Search index file: `verbatim-parser /local_docs/cards_index.json`
 - Uploaded docs folder: `verbatim-parser /local_docs/uploaded_docs`
 - Parser settings file: `verbatim-parser /local_docs/parser_settings.json`
+
+Desktop app persistence (Electron build):
+
+- Cards/settings/docs are stored in `~/Documents/Logos Continuum/local_docs`
+- On first launch after this change, existing data from Electron `userData/local_docs` is copied into that folder
+- This keeps parsed cards and parser settings available across app updates/reinstalls (as long as `~/Documents/Logos Continuum` is kept)
 
 When the backend starts and the index is empty, it auto-indexes local `.docx` files under `local_docs`.
 

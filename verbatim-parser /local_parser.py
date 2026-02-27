@@ -11,6 +11,29 @@ from search import Search
 LOCAL_FOLDER = "./local_docs"
 DONE_SUBDIR = "done"
 PARSER_SETTINGS_PATH = os.environ.get("PARSER_SETTINGS_PATH", os.path.join(LOCAL_FOLDER, "parser_settings.json"))
+PARSER_EVENTS_PATH = os.environ.get("PARSER_EVENTS_PATH", os.path.join(LOCAL_FOLDER, "parser_events.jsonl"))
+
+
+def _append_parser_event(level, message, payload=None):
+    event = {
+        "id": f"{int(time.time() * 1000)}-{os.getpid()}-{(time.time_ns() % 1000000)}",
+        "at": int(time.time() * 1000),
+        "level": str(level),
+        "message": str(message),
+        "source": "local-parser",
+    }
+    if isinstance(payload, dict):
+        event.update(payload)
+
+    try:
+        os.makedirs(os.path.dirname(PARSER_EVENTS_PATH), exist_ok=True)
+        with open(PARSER_EVENTS_PATH, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+    print(f"[parser:{event['level']}] {event['message']}", flush=True)
+    return event
 
 
 def _load_parser_settings():
@@ -23,6 +46,20 @@ def _load_parser_settings():
             return parsed if isinstance(parsed, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
+
+
+def _coerce_bool(value, fallback):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return fallback
 
 
 def _is_under_folder(path, folder):
@@ -101,6 +138,7 @@ def run_local_parser():
     ]
     if not files:
         print(f"⚠️ No new files found in {LOCAL_FOLDER} (excluding {done_folder})")
+        _append_parser_event("warn", f"No new files found in {LOCAL_FOLDER}")
         return
 
     sort_mode = os.environ.get("LOCAL_PARSER_SORT", "size_asc").strip().lower()
@@ -113,6 +151,10 @@ def run_local_parser():
 
     total_files = len(files)
     print(f"🔎 Found {total_files} files. Starting diagnostic parse... (sort={sort_mode})")
+    _append_parser_event("info", f"Local parser started with {total_files} file(s)", {
+        "files": total_files,
+        "sort_mode": sort_mode,
+    })
     run_started = time.perf_counter()
     processed = 0
     failed = 0
@@ -125,23 +167,25 @@ def run_local_parser():
     else:
         flush_every = max(1, int(parser_settings.get("flush_every_docs", 250)))
 
-    flush_enabled = bool(parser_settings.get("flush_enabled", True))
+    flush_enabled = _coerce_bool(parser_settings.get("flush_enabled", True), True)
 
-    if os.environ.get("PARSER_CARD_WORKERS") is not None:
+    use_parallel_processing = _coerce_bool(parser_settings.get("use_parallel_processing", True), True)
+
+    if not use_parallel_processing:
+        card_workers = 1
+    elif os.environ.get("PARSER_CARD_WORKERS") is not None:
         card_workers = resolve_card_workers()
     else:
-        use_parallel_processing = bool(parser_settings.get("use_parallel_processing", True))
-        if not use_parallel_processing:
-            card_workers = 1
-        else:
-            card_workers = max(1, int(parser_settings.get("parser_card_workers", 1)))
+        card_workers = max(1, int(parser_settings.get("parser_card_workers", 1)))
 
     physical_cores = _detect_physical_cores()
     if physical_cores >= 4:
         default_file_workers = min(physical_cores, 8)
     else:
         default_file_workers = physical_cores
-    if os.environ.get("LOCAL_PARSER_FILE_WORKERS") is not None:
+    if not use_parallel_processing:
+        file_workers = 1
+    elif os.environ.get("LOCAL_PARSER_FILE_WORKERS") is not None:
         file_workers = max(1, int(os.environ.get("LOCAL_PARSER_FILE_WORKERS", str(default_file_workers))))
     else:
         file_workers = max(1, int(parser_settings.get("local_parser_file_workers", default_file_workers)))
@@ -204,11 +248,24 @@ def run_local_parser():
                         f"✅ Parsed {result['filename']} with {len(card_indexes)} cards. "
                         f"({result['duration_ms']:.1f} ms)"
                     )
+
+                cards_per_second = (len(card_indexes) * 1000 / result['duration_ms']) if result['duration_ms'] > 0 else 0
+                _append_parser_event(
+                    "info",
+                    f"Parsed {result['filename']}: {len(card_indexes)} cards in {result['duration_ms']:.2f}ms ({cards_per_second:.2f} cards/s)",
+                    {
+                        "filename": result['filename'],
+                        "cards_indexed": len(card_indexes),
+                        "parse_ms": round(result['duration_ms'], 2),
+                        "cards_per_second": round(cards_per_second, 2),
+                    },
+                )
                 processed += 1
             except Exception as e:
                 print(f"❌ CRASHED on {filename}!")
                 print(f"ERROR MESSAGE: {e}")
                 traceback.print_exc()
+                _append_parser_event("error", f"Failed parsing {filename}: {e}", {"filename": filename})
                 failed += 1
 
             if progress_every > 0 and (index % progress_every == 0 or index == total_files):
@@ -227,6 +284,16 @@ def run_local_parser():
 
     total_ms = (time.perf_counter() - run_started) * 1000
     print(f"⏱️ Completed {processed}/{total_files} files with {failed} failures in {total_ms:.1f} ms")
+    _append_parser_event(
+        "info",
+        f"Local parser completed {processed}/{total_files} files with {failed} failures in {total_ms:.1f}ms",
+        {
+            "processed": processed,
+            "total_files": total_files,
+            "failed": failed,
+            "total_ms": round(total_ms, 2),
+        },
+    )
 
 if __name__ == '__main__':
     run_local_parser()

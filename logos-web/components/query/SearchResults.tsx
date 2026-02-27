@@ -1,6 +1,5 @@
 /* eslint-disable react/no-danger */
 /* eslint-disable no-nested-ternary */
-/* eslint-disable @typescript-eslint/no-var-requires */
 import {
   useState, useRef, useEffect, useMemo,
 } from 'react';
@@ -8,8 +7,6 @@ import type { SearchResult } from '../../lib/types';
 import { generateStyledCite } from '../../lib/utils';
 import DownloadLink from '../DownloadLink';
 import styles from './styles.module.scss';
-
-const stringSimilarity = require('string-similarity');
 
 const extractCardIdentifier = (result: SearchResult): string => {
   if (result.card_identifier && result.card_identifier.trim()) {
@@ -29,88 +26,128 @@ const stripIdentifierTokenFromTag = (tag: string): string => {
   return String(tag || '').replace(/\s*\[\[CID-[^\]]+\]\]\s*/gi, ' ').trim();
 };
 
+const RESULTS_PER_PAGE = 30;
+type SearchTab = 'tag' | 'paragraph';
+
+const getVisiblePageIndexes = (currentPage: number, hasMoreResults: boolean): number[] => {
+  const pages: number[] = [];
+
+  if (currentPage > 0) {
+    pages.push(currentPage - 1);
+  }
+
+  pages.push(currentPage);
+
+  if (hasMoreResults) {
+    pages.push(currentPage + 1);
+  }
+
+  return pages;
+};
+
 type SearchResultsProps = {
-  results: Array<SearchResult>;
+  tabResults: Record<SearchTab, Array<SearchResult>>;
+  tabCounts: Record<SearchTab, number>;
+  searchDurationsMs: Record<SearchTab, number>;
+  query: string;
   setSelected: (id: string) => void;
   cards: Record<string, any>;
   getCard: (id: string) => Promise<void>;
-  loadMore: () => Promise<any>;
+  loadPage: (tab: SearchTab, page: number) => Promise<boolean>;
   setDownloadUrls: (urls: string[]) => void;
-  hasMoreResults: boolean;
+  tabHasMoreResults: Record<SearchTab, boolean>;
 };
 
 const SearchResults = ({
-  results, setSelected, cards, getCard, loadMore, setDownloadUrls, hasMoreResults,
+  tabResults, tabCounts, searchDurationsMs, query, setSelected, cards, getCard, loadPage, setDownloadUrls, tabHasMoreResults,
 }: SearchResultsProps) => {
   const [requested, setRequested] = useState<Record<string, any>>({});
   const [loadingMore, setLoadingMore] = useState(false);
+  const [activeTab, setActiveTab] = useState<SearchTab>('tag');
+  const [tabPages, setTabPages] = useState<Record<SearchTab, number>>({ tag: 0, paragraph: 0 });
+  const [pendingNextPage, setPendingNextPage] = useState<number | null>(null);
   const resultsContainer = useRef<HTMLDivElement>(null);
-  const loadMoreTarget = useRef<HTMLDivElement>(null);
-
-  // filter the list by string similarity to avoid showing duplicate cards
-  // successive cards with a combined tag + cite similarity of 0.95 or greater compared with any other previous card
-  // will not be shown in the final set of search results
-  const filteredResults = useMemo<Array<SearchResult>>(() => {
-    return results.reduce<Array<SearchResult>>((acc, result) => {
-      const existingIndex = acc.findIndex((r) => {
-        return stringSimilarity.compareTwoStrings(`${r.tag} ${r.cite}`, `${result.tag} ${result.cite}`) > 0.95;
-      });
-
-      if (existingIndex === -1) {
-        return [...acc, result];
-      }
-
-      const existingResult = acc[existingIndex];
-      const updatedResult: SearchResult = { ...existingResult };
-
-      const existingUrls = Array.isArray(updatedResult.download_url)
-        ? [...updatedResult.download_url]
-        : updatedResult.download_url ? [updatedResult.download_url] : [];
-
-      const incomingUrl = Array.isArray(result.download_url)
-        ? result.download_url
-        : result.download_url ? [result.download_url] : [];
-
-      const mergedUrls = [...existingUrls];
-      incomingUrl.forEach((url) => {
-        if (!mergedUrls.includes(url)) {
-          mergedUrls.push(url);
-        }
-      });
-
-      updatedResult.download_url = mergedUrls.length === 1 ? mergedUrls[0] : mergedUrls;
-
-      const next = [...acc];
-      next[existingIndex] = updatedResult;
-      return next;
-    }, []);
-  }, [results]);
+  const activeResults = tabResults[activeTab] || [];
+  const hasMoreResults = !!tabHasMoreResults[activeTab];
+  const currentPage = tabPages[activeTab];
+  const pageResults = activeResults.slice(0, RESULTS_PER_PAGE);
+  const pageIndexes = useMemo(
+    () => getVisiblePageIndexes(currentPage, hasMoreResults),
+    [currentPage, hasMoreResults],
+  );
+  const activeSearchSeconds = (searchDurationsMs[activeTab] || 0) / 1000;
+  const formattedSearchTime = `${activeSearchSeconds.toFixed(2)} s`;
 
   useEffect(() => {
-    const target = loadMoreTarget.current;
-    if (!target) return undefined;
+    setTabPages({ tag: 0, paragraph: 0 });
+    setActiveTab('tag');
+    setPendingNextPage(null);
+  }, [query]);
 
-    const observer = new IntersectionObserver(async (entries) => {
-      const [entry] = entries;
-      if (!entry?.isIntersecting || loadingMore || filteredResults.length === 0 || !hasMoreResults) {
-        return;
-      }
+  useEffect(() => {
+    if (pendingNextPage === null) {
+      return;
+    }
 
-      setLoadingMore(true);
-      try {
-        await loadMore();
-      } finally {
-        setLoadingMore(false);
+    if (loadingMore) {
+      return;
+    }
+
+    const targetPage = pendingNextPage;
+    setLoadingMore(true);
+    void loadPage(activeTab, targetPage).then((didLoad) => {
+      if (didLoad) {
+        setTabPages((prev) => ({ ...prev, [activeTab]: targetPage }));
       }
-    }, {
-      root: resultsContainer.current,
-      rootMargin: '200px',
-      threshold: 0.01,
+    }).finally(() => {
+      setLoadingMore(false);
+      setPendingNextPage(null);
     });
+  }, [pendingNextPage, activeTab, loadingMore]);
 
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [loadingMore, filteredResults.length, loadMore, hasMoreResults]);
+  useEffect(() => {
+    if (resultsContainer.current) {
+      resultsContainer.current.scrollTop = 0;
+    }
+  }, [activeTab, currentPage]);
+
+  const onTabChange = (tab: SearchTab) => {
+    setActiveTab(tab);
+    setPendingNextPage(null);
+  };
+
+  const onPrevPage = () => {
+    const previousPage = Math.max(0, currentPage - 1);
+    if (previousPage === currentPage || loadingMore) {
+      return;
+    }
+    setPendingNextPage(previousPage);
+  };
+
+  const onNextPage = async () => {
+    const nextPage = currentPage + 1;
+    if (!hasMoreResults || loadingMore) {
+      return;
+    }
+
+    setPendingNextPage(nextPage);
+  };
+
+  const onPageSelect = async (targetPage: number) => {
+    if (targetPage < 0 || targetPage === currentPage) {
+      return;
+    }
+
+    if (loadingMore) {
+      return;
+    }
+
+    if (targetPage > currentPage && !hasMoreResults) {
+      return;
+    }
+
+    setPendingNextPage(targetPage);
+  };
 
   const renderResult = (result: SearchResult, index: number) => {
 
@@ -151,12 +188,108 @@ const SearchResults = ({
   };
 
   return (
-    <div className={styles.results} ref={resultsContainer}>
-      {filteredResults.map(renderResult)}
-      {hasMoreResults && <div ref={loadMoreTarget} className={styles['load-more-trigger']} />}
-      {!hasMoreResults && filteredResults.length > 0 && (
-        <div className={styles['end-of-results']}>End of results</div>
-      )}
+    <div className={styles['results-shell']}>
+      <div className={styles['results-tabs']}>
+        <div className={styles['results-tabs-left']}>
+          <button
+            type="button"
+            className={`${styles['results-tab']} ${activeTab === 'tag' ? styles['results-tab-active'] : ''}`}
+            onClick={() => onTabChange('tag')}
+          >
+            Tag Matches ({tabCounts.tag})
+          </button>
+          <button
+            type="button"
+            className={`${styles['results-tab']} ${activeTab === 'paragraph' ? styles['results-tab-active'] : ''}`}
+            onClick={() => onTabChange('paragraph')}
+          >
+            Paragraph Matches ({tabCounts.paragraph})
+          </button>
+        </div>
+        <div className={styles['results-tabs-center']}>
+          {formattedSearchTime}
+        </div>
+        <div className={styles['results-tabs-right']}>
+          <div className={styles['results-tabs-pages']}>
+            {pageIndexes.map((pageIndex) => (
+              <button
+                key={`top-${pageIndex}`}
+                type="button"
+                className={`${styles['page-number']} ${pageIndex === currentPage ? styles['page-number-active'] : ''}`}
+                onClick={() => { void onPageSelect(pageIndex); }}
+                disabled={loadingMore}
+              >
+                {pageIndex + 1}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className={styles['page-button']}
+            onClick={onPrevPage}
+            disabled={currentPage === 0 || loadingMore}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className={styles['page-button']}
+            onClick={() => { void onNextPage(); }}
+            disabled={loadingMore || !hasMoreResults}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.results} ref={resultsContainer}>
+
+        {pageResults.map(renderResult)}
+
+        {pageResults.length === 0 && (
+          <div className={styles['end-of-results']}>
+            {activeTab === 'tag' ? 'No tag matches in loaded results yet' : 'No paragraph matches in loaded results yet'}
+          </div>
+        )}
+
+        {(activeResults.length > 0 || hasMoreResults) && (
+          <div className={styles.pagination}>
+            <button
+              type="button"
+              className={styles['page-button']}
+              onClick={onPrevPage}
+              disabled={currentPage === 0 || loadingMore}
+            >
+              Previous
+            </button>
+            <div className={styles['page-numbers']}>
+              {pageIndexes.map((pageIndex) => (
+                <button
+                  key={pageIndex}
+                  type="button"
+                  className={`${styles['page-number']} ${pageIndex === currentPage ? styles['page-number-active'] : ''}`}
+                  onClick={() => { void onPageSelect(pageIndex); }}
+                  disabled={loadingMore}
+                >
+                  {pageIndex + 1}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className={styles['page-button']}
+              onClick={() => { void onNextPage(); }}
+              disabled={loadingMore || !hasMoreResults}
+            >
+              Next
+            </button>
+          </div>
+        )}
+
+        {!hasMoreResults && activeResults.length > 0 && (
+          <div className={styles['end-of-results']}>End of results</div>
+        )}
+      </div>
     </div>
   );
 };

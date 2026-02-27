@@ -76,6 +76,7 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
 }: CardProps, ref) => {
   const styledCite = generateStyledCite(card?.cite, card?.cite_emphasis);
   const container = useRef<HTMLDivElement>(null);
+  const headerMetaContainer = useRef<HTMLDivElement>(null);
   const { highlightColor, theme } = useContext(AppContext);
   const [isEditing, setIsEditing] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
@@ -89,6 +90,8 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
   const [editMessage, setEditMessage] = useState('');
   const [undoStack, setUndoStack] = useState<DraftSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<DraftSnapshot[]>([]);
+  const [isHeaderOverflowing, setIsHeaderOverflowing] = useState(false);
+  const handledExternalEditRequest = useRef(0);
   const cardIdentifier = extractCardIdentifier(card?.tag, card?.card_identifier);
   const displayTag = isEditing ? tagDraft : stripIdentifierTokenFromTag(card?.tag);
 
@@ -338,14 +341,51 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
   }), [copy]);
 
   useEffect(() => {
-    if (externalEditRequest > 0 && card) {
+    if (!card) {
+      return;
+    }
+
+    if (externalEditRequest > handledExternalEditRequest.current) {
+      handledExternalEditRequest.current = externalEditRequest;
       setIsEditing(true);
     }
-  }, [externalEditRequest, card]);
+  }, [externalEditRequest, card?.id]);
 
   useEffect(() => {
     onEditModeChange?.(isEditing);
   }, [isEditing, onEditModeChange]);
+
+  useEffect(() => {
+    const element = headerMetaContainer.current;
+    if (!element) {
+      setIsHeaderOverflowing(false);
+      return;
+    }
+
+    const measureOverflow = () => {
+      setIsHeaderOverflowing(element.scrollHeight > element.clientHeight + 1);
+    };
+
+    measureOverflow();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measureOverflow);
+      return () => {
+        window.removeEventListener('resize', measureOverflow);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      measureOverflow();
+    });
+    observer.observe(element);
+    window.addEventListener('resize', measureOverflow);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measureOverflow);
+    };
+  }, [isEditing, displayTag, tagSubDraft, citeDraft, card?.tag_sub, styledCite]);
 
   const onBodyParagraphChange = (paragraphIndex: number, value: string) => {
     const line = paragraphIndex + 2;
@@ -433,6 +473,88 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
     };
   };
 
+  const clearRangesInSelection = (
+    ranges: Array<[number, number, number]>,
+    line: number,
+    start: number,
+    end: number,
+  ) => {
+    const next: Array<[number, number, number]> = [];
+
+    for (const [rangeLine, rangeStart, rangeEnd] of ranges) {
+      if (rangeLine !== line || end <= rangeStart || start >= rangeEnd) {
+        next.push([rangeLine, rangeStart, rangeEnd]);
+        continue;
+      }
+
+      if (start > rangeStart) {
+        next.push([rangeLine, rangeStart, start]);
+      }
+
+      if (end < rangeEnd) {
+        next.push([rangeLine, end, rangeEnd]);
+      }
+    }
+
+    next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+    return next;
+  };
+
+  const isSelectionFullyFormatted = (
+    ranges: Array<[number, number, number]>,
+    line: number,
+    start: number,
+    end: number,
+  ) => {
+    const lineRanges = ranges
+      .filter(([rangeLine, rangeStart, rangeEnd]) => {
+        return rangeLine === line && rangeEnd > start && rangeStart < end;
+      })
+      .map(([, rangeStart, rangeEnd]) => [Math.max(start, rangeStart), Math.min(end, rangeEnd)] as [number, number]);
+
+    if (!lineRanges.length) return false;
+
+    lineRanges.sort((a, b) => a[0] - b[0]);
+    let coveredUntil = start;
+
+    for (const [rangeStart, rangeEnd] of lineRanges) {
+      if (rangeStart > coveredUntil) {
+        return false;
+      }
+      coveredUntil = Math.max(coveredUntil, rangeEnd);
+      if (coveredUntil >= end) {
+        return true;
+      }
+    }
+
+    return coveredUntil >= end;
+  };
+
+  const toggleSelectionRanges = (
+    ranges: Array<[number, number, number]>,
+    line: number,
+    start: number,
+    end: number,
+  ) => {
+    if (isSelectionFullyFormatted(ranges, line, start, end)) {
+      return {
+        next: clearRangesInSelection(ranges, line, start, end),
+        removed: true,
+      };
+    }
+
+    const next: Array<[number, number, number]> = [
+      ...ranges,
+      [line, start, end],
+    ];
+    next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+
+    return {
+      next,
+      removed: false,
+    };
+  };
+
   const highlightSelection = () => {
     const selected = getCurrentSelectionRange();
     if (!selected) {
@@ -440,20 +562,28 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
       return;
     }
 
+    const { removed } = toggleSelectionRanges(
+      highlightDraft,
+      selected.line,
+      selected.safeStart,
+      selected.safeEnd,
+    );
+
     applyDraftChange((previous) => {
-      const next: Array<[number, number, number]> = [
-        ...previous.highlightDraft,
-        [selected.line, selected.safeStart, selected.safeEnd],
-      ];
-      next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+      const toggled = toggleSelectionRanges(
+        previous.highlightDraft,
+        selected.line,
+        selected.safeStart,
+        selected.safeEnd,
+      );
       return {
         ...previous,
-        highlightDraft: next,
+        highlightDraft: toggled.next,
       };
     });
 
     selected.selection.removeAllRanges();
-    setEditMessage('Highlight added.');
+    setEditMessage(removed ? 'Highlight removed.' : 'Highlight added.');
   };
 
   const boldSelection = () => {
@@ -463,20 +593,28 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
       return;
     }
 
+    const { removed } = toggleSelectionRanges(
+      emphasisDraft,
+      selected.line,
+      selected.safeStart,
+      selected.safeEnd,
+    );
+
     applyDraftChange((previous) => {
-      const next: Array<[number, number, number]> = [
-        ...previous.emphasisDraft,
-        [selected.line, selected.safeStart, selected.safeEnd],
-      ];
-      next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+      const toggled = toggleSelectionRanges(
+        previous.emphasisDraft,
+        selected.line,
+        selected.safeStart,
+        selected.safeEnd,
+      );
       return {
         ...previous,
-        emphasisDraft: next,
+        emphasisDraft: toggled.next,
       };
     });
 
     selected.selection.removeAllRanges();
-    setEditMessage('Bold added.');
+    setEditMessage(removed ? 'Bold removed.' : 'Bold added.');
   };
 
   const underlineSelection = () => {
@@ -486,20 +624,28 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
       return;
     }
 
+    const { removed } = toggleSelectionRanges(
+      underlineDraft,
+      selected.line,
+      selected.safeStart,
+      selected.safeEnd,
+    );
+
     applyDraftChange((previous) => {
-      const next: Array<[number, number, number]> = [
-        ...previous.underlineDraft,
-        [selected.line, selected.safeStart, selected.safeEnd],
-      ];
-      next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+      const toggled = toggleSelectionRanges(
+        previous.underlineDraft,
+        selected.line,
+        selected.safeStart,
+        selected.safeEnd,
+      );
       return {
         ...previous,
-        underlineDraft: next,
+        underlineDraft: toggled.next,
       };
     });
 
     selected.selection.removeAllRanges();
-    setEditMessage('Underline added.');
+    setEditMessage(removed ? 'Underline removed.' : 'Underline added.');
   };
 
   const italicSelection = () => {
@@ -509,20 +655,28 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
       return;
     }
 
+    const { removed } = toggleSelectionRanges(
+      italicDraft,
+      selected.line,
+      selected.safeStart,
+      selected.safeEnd,
+    );
+
     applyDraftChange((previous) => {
-      const next: Array<[number, number, number]> = [
-        ...previous.italicDraft,
-        [selected.line, selected.safeStart, selected.safeEnd],
-      ];
-      next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+      const toggled = toggleSelectionRanges(
+        previous.italicDraft,
+        selected.line,
+        selected.safeStart,
+        selected.safeEnd,
+      );
       return {
         ...previous,
-        italicDraft: next,
+        italicDraft: toggled.next,
       };
     });
 
     selected.selection.removeAllRanges();
-    setEditMessage('Italics added.');
+    setEditMessage(removed ? 'Italics removed.' : 'Italics added.');
   };
 
   const clearSelectionFormatting = () => {
@@ -531,33 +685,6 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
       setEditMessage('Select text in one paragraph first.');
       return;
     }
-
-    const clearRangesInSelection = (
-      ranges: Array<[number, number, number]>,
-      line: number,
-      start: number,
-      end: number,
-    ) => {
-      const next: Array<[number, number, number]> = [];
-
-      for (const [rangeLine, rangeStart, rangeEnd] of ranges) {
-        if (rangeLine !== line || end <= rangeStart || start >= rangeEnd) {
-          next.push([rangeLine, rangeStart, rangeEnd]);
-          continue;
-        }
-
-        if (start > rangeStart) {
-          next.push([rangeLine, rangeStart, start]);
-        }
-
-        if (end < rangeEnd) {
-          next.push([rangeLine, end, rangeEnd]);
-        }
-      }
-
-      next.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
-      return next;
-    };
 
     const changed = applyDraftChange((previous) => {
       return {
@@ -720,40 +847,177 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
       ? window.localStorage.getItem('selectedFont') || undefined
       : undefined;
 
-    saveCardEdit(updatedCard.id, {
-      tag: updatedCard.tag,
-      tag_sub: updatedCard.tag_sub,
-      cite: updatedCard.cite,
-      citeEmphasis: updatedCard.cite_emphasis || [],
-      body: updatedCard.body,
-      highlights: updatedCard.highlights,
-      emphasis: updatedCard.emphasis,
-      underlines: updatedCard.underlines,
-      italics: updatedCard.italics || [],
-      sourceDocuments: sourceLabels,
-      cardIdentifier: card.card_identifier,
-      selectedFont,
-      highlightColor,
-    });
+    try {
+      saveCardEdit(updatedCard.id, {
+        tag: updatedCard.tag,
+        tag_sub: updatedCard.tag_sub,
+        cite: updatedCard.cite,
+        citeEmphasis: updatedCard.cite_emphasis || [],
+        body: updatedCard.body,
+        highlights: updatedCard.highlights,
+        emphasis: updatedCard.emphasis,
+        underlines: updatedCard.underlines,
+        italics: updatedCard.italics || [],
+        sourceDocuments: sourceLabels,
+        cardIdentifier: card.card_identifier,
+        selectedFont,
+        highlightColor,
+      });
 
-    onCardSave?.(updatedCard);
-    setUndoStack([]);
-    setRedoStack([]);
-    setIsEditing(false);
+      onCardSave?.(updatedCard);
+      setUndoStack([]);
+      setRedoStack([]);
+    } finally {
+      setIsEditing(false);
+    }
   };
+
+  const editorToolbar = isEditing ? (
+    <div className={`${styles['editor-toolbar']} ${isHeaderOverflowing ? styles['editor-toolbar-overflow'] : ''}`}>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={highlightSelection}
+        aria-label="Highlight selection"
+        title="Highlight selection"
+      >
+        <img
+          src="/stylus_highlighter_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Highlight selection"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={boldSelection}
+        aria-label="Bold selection"
+        title="Bold selection"
+      >
+        <img
+          src="/format_bold_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Bold selection"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={underlineSelection}
+        aria-label="Underline selection"
+        title="Underline selection"
+      >
+        <img
+          src="/format_underlined_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Underline selection"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={italicSelection}
+        aria-label="Italicize selection"
+        title="Italicize selection"
+      >
+        <img
+          src="/format_italic_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Italicize selection"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={clearSelectionFormatting}
+        aria-label="Clear selected formatting"
+        title="Clear selected formatting"
+      >
+        <img
+          src="/format_clear_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Clear selected formatting"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={onUndo}
+        disabled={!undoStack.length}
+        aria-label="Undo"
+        title="Undo"
+      >
+        <img
+          src="/undo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Undo"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={onRedo}
+        disabled={!redoStack.length}
+        aria-label="Redo"
+        title="Redo"
+      >
+        <img
+          src="/redo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Redo"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={onCancel}
+        aria-label="Cancel"
+        title="Cancel"
+      >
+        <img
+          src="/cancel_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Cancel"
+          className={styles['icon-image']}
+        />
+      </button>
+      <button
+        className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
+        type="button"
+        onClick={onSave}
+        disabled={!hasCardChanges}
+        aria-label="Save"
+        title="Save"
+      >
+        <img
+          src="/save_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
+          alt="Save"
+          className={styles['icon-image']}
+        />
+      </button>
+      {!!editorRightActions && (
+        <div className={styles['editor-toolbar-right']}>
+          {editorRightActions}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className={styles.card}>
       {!!card && (
         <>
           <div ref={container} className={styles['card-content']}>
-            <div className={styles['card-header']}>
+            <div
+              ref={headerMetaContainer}
+              className={`${styles['card-header']} ${styles['card-header-scrollable']} ${isHeaderOverflowing ? styles['card-header-overflowing'] : ''}`}
+            >
+              {isEditing && isHeaderOverflowing && editorToolbar}
               <div className={styles['copy-container']}>
                 <h4
+                  className={`${isEditing ? styles['editable-block'] : ''} ${styles['card-tag-title']}`}
                   style={{
                     fontSize: '16pt', marginTop: 2, marginBottom: 0, lineHeight: LINE_HEIGHT,
                   }}
-                  className={isEditing ? styles['editable-block'] : undefined}
                   contentEditable={isEditing}
                   suppressContentEditableWarning
                   onBlur={(e) => {
@@ -767,138 +1031,10 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
                 </h4>
                 {!isEditing && !!cardIdentifier && <div className={styles['card-cid']}>{cardIdentifier}</div>}
               </div>
-              {isEditing && (
-                <div className={styles['editor-toolbar']}>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={highlightSelection}
-                    aria-label="Highlight selection"
-                    title="Highlight selection"
-                  >
-                    <img
-                      src="/stylus_highlighter_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Highlight selection"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={boldSelection}
-                    aria-label="Bold selection"
-                    title="Bold selection"
-                  >
-                    <img
-                      src="/format_bold_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Bold selection"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={underlineSelection}
-                    aria-label="Underline selection"
-                    title="Underline selection"
-                  >
-                    <img
-                      src="/format_underlined_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Underline selection"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={italicSelection}
-                    aria-label="Italicize selection"
-                    title="Italicize selection"
-                  >
-                    <img
-                      src="/format_italic_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Italicize selection"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={clearSelectionFormatting}
-                    aria-label="Clear selected formatting"
-                    title="Clear selected formatting"
-                  >
-                    <img
-                      src="/format_clear_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Clear selected formatting"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={onUndo}
-                    disabled={!undoStack.length}
-                    aria-label="Undo"
-                    title="Undo"
-                  >
-                    <img
-                      src="/undo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Undo"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={onRedo}
-                    disabled={!redoStack.length}
-                    aria-label="Redo"
-                    title="Redo"
-                  >
-                    <img
-                      src="/redo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Redo"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={onCancel}
-                    aria-label="Cancel"
-                    title="Cancel"
-                  >
-                    <img
-                      src="/cancel_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Cancel"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  <button
-                    className={`${styles['toolbar-action']} ${styles['editor-toolbar-action']}`}
-                    type="button"
-                    onClick={onSave}
-                    disabled={!hasCardChanges}
-                    aria-label="Save"
-                    title="Save"
-                  >
-                    <img
-                      src="/save_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
-                      alt="Save"
-                      className={styles['icon-image']}
-                    />
-                  </button>
-                  {!!editorRightActions && (
-                    <div className={styles['editor-toolbar-right']}>
-                      {editorRightActions}
-                    </div>
-                  )}
-                </div>
-              )}
+              {isEditing && !isHeaderOverflowing && editorToolbar}
               {(isEditing || !!card.tag_sub) && (
                 <p
-                  className={`MsoNormal ${isEditing ? styles['editable-block'] : ''}`}
+                  className={`MsoNormal ${isEditing ? styles['editable-block'] : ''} ${styles['card-tag-sub']}`}
                   style={{ fontSize: '11pt', margin: '0in 0in 8pt', lineHeight: LINE_HEIGHT }}
                   contentEditable={isEditing}
                   suppressContentEditableWarning
@@ -913,7 +1049,8 @@ const CardDetail = forwardRef<CardDetailHandle, CardProps>(({
                 </p>
               )}
 
-              <p className={`MsoNormal ${isEditing ? styles['editable-block'] : ''}`}
+              <p
+                className={`MsoNormal ${isEditing ? styles['editable-block'] : ''} ${styles['card-cite']}`}
                 style={{
                   fontSize: '11pt', marginTop: 0, marginBottom: 8, lineHeight: LINE_HEIGHT,
                 }}

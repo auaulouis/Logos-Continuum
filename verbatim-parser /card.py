@@ -1,4 +1,5 @@
 import hashlib
+from functools import lru_cache
 from date_test import generate_date_from_cite
 # from docx.text.paragraph import Paragraph
 import re
@@ -31,6 +32,13 @@ UNDERLINE_NAME = "Underline"
 LIST_PARAGRAPH_NAME = "List Paragraph"
 CITE_NAME = ["13 pt Bold", "Cites"]
 CITE_NAME_SET = set(CITE_NAME)
+BODY_STYLE_NAME_SET = set(NORMAL_NAME)
+DIGIT_RE = re.compile(r"\d")
+
+
+@lru_cache(maxsize=4096)
+def _cached_cite_date(cite_text):
+  return generate_date_from_cite(cite_text)
 
 
 def _document_number(filename):
@@ -62,12 +70,12 @@ class Card():
     tag_sub_parts = []
     for i in range(1, len(paragraphs)):
       paragraph_text = paragraphs[i].text
-      if not any(c.isdigit() for c in paragraph_text):
+      if DIGIT_RE.search(paragraph_text) is None:
         tag_sub_parts.append(paragraph_text)
       else:
         self.cite = paragraph_text
         self.cite_i = i
-        self.body = [p.text for p in paragraphs[i+1:] if p.style.name in NORMAL_NAME_SET or p.style.name == LIST_PARAGRAPH_NAME]
+        self.body = [p.text for p in paragraphs[i+1:] if p.style.name in BODY_STYLE_NAME_SET or p.style.name == LIST_PARAGRAPH_NAME]
         break
 
     if tag_sub_parts:
@@ -85,7 +93,7 @@ class Card():
 
     self.additional_info = additional_info
     self.object_id = hashlib.sha256(str(self).encode()).hexdigest()
-    self.cite_date = generate_date_from_cite(self.cite)
+    self.cite_date = _cached_cite_date(self.cite)
 
   def get_registry_key(self):
     filename = str(self.additional_info.get("filename", "")).strip().lower()
@@ -106,11 +114,17 @@ class Card():
     cite_text = cite_paragraph.text
 
     for r in cite_paragraph.runs:
-      run_text = r.text.strip()
-      if not run_text:
+      run_text = r.text
+      if not run_text or run_text.isspace():
         continue
 
       run_index = cite_text.find(run_text, j)
+      if run_index == -1:
+        stripped_run_text = run_text.strip()
+        if stripped_run_text:
+          run_index = cite_text.find(stripped_run_text, j)
+          if run_index != -1:
+            run_text = stripped_run_text
 
       if run_index == -1:
         continue
@@ -127,16 +141,27 @@ class Card():
 
     for i in range(self.cite_i + 1, len(self.paragraphs)):
       p = self.paragraphs[i]
+      paragraph_style_name = p.style.name
+      if paragraph_style_name not in BODY_STYLE_NAME_SET and paragraph_style_name != LIST_PARAGRAPH_NAME:
+        p_index += 1
+        continue
+
       runs = p.runs
       paragraph_text = p.text
       j = 0
 
       for r in runs:
-        run_text = r.text.strip()
-        if not run_text:
+        run_text = r.text
+        if not run_text or run_text.isspace():
           continue
 
         run_index = paragraph_text.find(run_text, j)
+        if run_index == -1:
+          stripped_run_text = run_text.strip()
+          if stripped_run_text:
+            run_index = paragraph_text.find(stripped_run_text, j)
+            if run_index != -1:
+              run_text = stripped_run_text
 
         if run_index == -1:
           continue

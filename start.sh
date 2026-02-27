@@ -35,7 +35,7 @@ trap cleanup SIGINT SIGTERM EXIT
 echo "🐍 Starting API on Port 5001..."
 cd "$BACKEND_DIR"
 source .venv/bin/activate
-PORT=5001 python3 api.py &
+PYTHONUNBUFFERED=1 PORT=5001 python3 -u api.py &
 BACKEND_PID=$!
 
 echo "⚛️  Starting Next.js Frontend..."

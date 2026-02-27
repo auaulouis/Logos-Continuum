@@ -78,7 +78,9 @@ class Parser():
 
     split_time = time.perf_counter()
 
-    if self.max_workers == 1:
+    use_parallel_build = self.max_workers > 1 and len(card_chunks) >= 64
+
+    if not use_parallel_build:
       for chunk in card_chunks:
         try:
           self.cards.append(self._build_card(chunk))

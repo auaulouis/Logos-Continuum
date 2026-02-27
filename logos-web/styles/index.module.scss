@@ -211,14 +211,41 @@
   padding: 26px 26px 22px;
   border-radius: 28px;
   border: 1px solid var(--color-border-soft);
-  background: var(--color-panel-surface);
-  backdrop-filter: blur(var(--panel-blur));
+  background: rgba(248, 252, 255, 0.74);
+  backdrop-filter: blur(3px) saturate(88%);
+  -webkit-backdrop-filter: blur(3px) saturate(88%);
   box-shadow: 0 18px 42px rgba(110, 129, 180, 0.2);
   position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   font-family: Helvetica, Arial, sans-serif;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.05) 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0 2px, rgba(0, 0, 0, 0.015) 2px 4px);
+  opacity: 0.75;
+}
+
+:global(html[data-theme='dark']) .panel {
+  background: rgba(27, 36, 52, 0.74);
+  backdrop-filter: blur(5px) saturate(90%);
+  -webkit-backdrop-filter: blur(5px) saturate(90%);
+}
+
+:global(html[data-theme='dark']) .panel::before {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(8, 12, 18, 0.08) 100%),
+    repeating-linear-gradient(135deg, rgba(210, 230, 255, 0.02) 0 2px, rgba(0, 0, 0, 0.05) 2px 4px);
+  opacity: 0.68;
 }
 
 .logo {
@@ -378,9 +405,9 @@
 
 .upload-status {
   margin: 0;
-  color: rgba(35, 58, 90, 0.9);
-  font-size: 12px;
-  font-family: inherit;
+  color: rgba(56, 82, 128, 0.92);
+  font-size: 11px;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
 .upload-details {
@@ -389,13 +416,37 @@
   min-height: 92px;
   resize: vertical;
   padding: 8px;
-  border: 1px solid rgba(145, 165, 214, 0.25);
+  border: 1px solid rgba(145, 165, 214, 0.46);
   outline: 0;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.9);
-  font-size: 12px;
-  color: rgba(0,0,0,0.8);
-  font-family: inherit;
+  background: rgba(246, 250, 255, 0.94);
+  font-size: 11px;
+  color: rgba(30, 54, 92, 0.95);
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  line-height: 1.4;
+}
+
+.upload-details::placeholder {
+  color: rgba(103, 128, 170, 0.74);
+}
+
+:global(html[data-theme='dark']) .upload-status {
+  color: rgba(198, 216, 255, 0.94);
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 11px;
+}
+
+:global(html[data-theme='dark']) .upload-details {
+  border: 1px solid rgba(116, 143, 200, 0.46);
+  background: rgba(10, 16, 28, 0.9);
+  color: rgba(214, 228, 255, 0.95);
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+:global(html[data-theme='dark']) .upload-details::placeholder {
+  color: rgba(170, 188, 220, 0.74);
 }
 
 .clear-index {
@@ -448,10 +499,11 @@
   text-decoration: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 40px;
   height: 40px;
   box-sizing: border-box;
-  padding: 0 14px;
+  padding: 0;
   border-radius: 18px;
   border: 1px solid var(--color-button-border);
   box-shadow: var(--color-button-shadow);
@@ -459,11 +511,33 @@
   cursor: pointer;
   color: var(--color-button-text);
   background: var(--color-button-bg);
-  font-size: 15px;
-  font-family: inherit;
-  font-weight: 300;
   transition: 0.3s all;
   z-index: 4;
+
+  &:hover {
+    transform: scale(1.03) translateY(-1px);
+    box-shadow: 0 4px 10px rgba(86, 110, 160, 0.22);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.theme-toggle-button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-button-border);
+  border-radius: 18px;
+  padding: 0;
+  background: var(--color-button-bg);
+  box-shadow: var(--color-button-shadow);
+  color: var(--color-button-text);
+  cursor: pointer;
+  transition: all 0.3s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 
   &:hover {
     transform: scale(1.03) translateY(-1px);
@@ -481,6 +555,18 @@
   object-fit: contain;
   display: block;
   filter: brightness(0) saturate(100%);
+}
+
+.theme-toggle-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+  filter: brightness(0) saturate(100%);
+}
+
+.panel-settings-icon-dark {
+  filter: brightness(0) saturate(100%) invert(1);
 }
 
 .confirm-overlay {

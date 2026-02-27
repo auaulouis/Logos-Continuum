@@ -9,6 +9,8 @@ import { AppContext } from '../lib/appContext';
 import * as apiService from '../services/api';
 import styles from '../styles/index.module.scss';
 
+type ParserEvent = apiService.ParserEvent;
+
 type DebugLevel = 'info' | 'warn' | 'error';
 type DebugEntry = {
   id: number;
@@ -18,6 +20,7 @@ type DebugEntry = {
 };
 
 const IndexPage = () => {
+  const { theme, toggleTheme } = useContext(AppContext);
   type DebugPhase = 'closed' | 'open' | 'closing';
   const [query, setQuery] = useState('');
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -27,12 +30,13 @@ const IndexPage = () => {
   const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([
     { id: 1, at: Date.now(), level: 'info', message: 'Debug console initialized' },
   ]);
-  const { theme } = useContext(AppContext);
   const backgroundCanvasElement = useRef<HTMLCanvasElement | null>(null);
   const uploadInputElement = useRef<HTMLInputElement | null>(null);
   const uploadDetailsElement = useRef<HTMLTextAreaElement | null>(null);
   const debugLogElement = useRef<HTMLDivElement | null>(null);
   const debugCloseTimer = useRef<number | null>(null);
+  const parserActivitySignature = useRef('');
+  const seenParserEventIds = useRef<Set<string>>(new Set());
   const router = useRouter();
 
   const isDebugOpen = debugPhase === 'open';
@@ -49,7 +53,7 @@ const IndexPage = () => {
     debugCloseTimer.current = window.setTimeout(() => {
       setDebugPhase('closed');
       debugCloseTimer.current = null;
-    }, 220);
+    }, 420);
   }, [debugPhase]);
 
   const openDebugConsole = useCallback(() => {
@@ -80,6 +84,15 @@ const IndexPage = () => {
     });
   }, []);
 
+  const mirrorParserActivityToDebug = useCallback((status: string, details: string) => {
+    const signature = `${status}\n${details}`;
+    if (signature === parserActivitySignature.current) {
+      return;
+    }
+    parserActivitySignature.current = signature;
+    addDebugEntry('info', `Parser activity: ${status}\n${details}`);
+  }, [addDebugEntry]);
+
   const formattedDebugEntries = useMemo(() => debugEntries.map((entry) => {
     const timestamp = new Date(entry.at).toLocaleTimeString();
     return {
@@ -93,10 +106,6 @@ const IndexPage = () => {
      // page: 'Home',
    // });
     addDebugEntry('info', 'Home page mounted');
-  }, []);
-
-  useEffect(() => {
-    document.body.style.fontFamily = 'Helvetica, Arial, sans-serif';
   }, []);
 
   useEffect(() => {
@@ -137,6 +146,106 @@ const IndexPage = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let pollTimer: number | null = null;
+
+    const formatMs = (value: number) => {
+      if (!Number.isFinite(value)) return '0.00';
+      return value.toFixed(2);
+    };
+
+    const formatRate = (value: number) => {
+      if (!Number.isFinite(value)) return '0.00';
+      return value.toFixed(2);
+    };
+
+    const mapLevel = (value?: string): DebugLevel => {
+      if (value === 'warn' || value === 'error') return value;
+      return 'info';
+    };
+
+    const pollParserEvents = async () => {
+      try {
+        const response = await apiService.getParserEvents(120);
+        if (cancelled) {
+          return;
+        }
+
+        const events = Array.isArray(response.events) ? response.events : [];
+        const sortedEvents = [...events].sort((left, right) => Number(left.at || 0) - Number(right.at || 0));
+        const newEvents: ParserEvent[] = [];
+
+        for (const event of sortedEvents) {
+          const eventId = String(event.id || '');
+          if (eventId.length === 0 || seenParserEventIds.current.has(eventId)) {
+            continue;
+          }
+          seenParserEventIds.current.add(eventId);
+          newEvents.push(event);
+        }
+
+        if (seenParserEventIds.current.size > 600) {
+          const latestIds = sortedEvents
+            .slice(-300)
+            .map((event) => String(event.id || ''))
+            .filter((id) => id.length > 0);
+          seenParserEventIds.current = new Set(latestIds);
+        }
+
+        for (const event of newEvents) {
+          addDebugEntry(mapLevel(event.level), event.message);
+        }
+
+        const parseEvents = sortedEvents.filter((event) => Number(event.parse_ms || 0) > 0 || Number(event.cards_indexed || 0) > 0);
+        if (parseEvents.length > 0) {
+          const recent = parseEvents.slice(-12);
+          const totalCards = recent.reduce((sum, event) => sum + Number(event.cards_indexed || 0), 0);
+          const totalParseMs = recent.reduce((sum, event) => sum + Number(event.parse_ms || 0), 0);
+          const aggregateRate = totalParseMs > 0 ? (totalCards * 1000) / totalParseMs : 0;
+
+          setUploadStatus('Parser activity detected');
+          const parserDetails = [
+            'Latest parser timings:',
+            ...recent.map((event) => {
+              const filename = event.filename || 'unknown-file';
+              const cards = Number(event.cards_indexed || 0);
+              const parseMs = Number(event.parse_ms || 0);
+              const cps = Number(event.cards_per_second || (parseMs > 0 ? (cards * 1000) / parseMs : 0));
+              const source = event.source || 'parser';
+              return `- ${filename} | ${cards} cards | ${formatMs(parseMs)} ms | ${formatRate(cps)} cards/s | ${source}`;
+            }),
+            '',
+            'Recent aggregate:',
+            `- Files counted: ${recent.length}`,
+            `- Total cards: ${totalCards}`,
+            `- Total parse time: ${formatMs(totalParseMs)} ms`,
+            `- Aggregate throughput: ${formatRate(aggregateRate)} cards/s`,
+          ].join('\n');
+          setUploadDetails(parserDetails);
+          mirrorParserActivityToDebug('Parser activity detected', parserDetails);
+        }
+      } catch {
+        if (!cancelled) {
+          setUploadStatus('Parser details unavailable (API not reachable)');
+        }
+      } finally {
+        if (!cancelled) {
+          pollTimer = window.setTimeout(pollParserEvents, 2500);
+        }
+      }
+    };
+
+    pollParserEvents();
+
+    return () => {
+      cancelled = true;
+      if (pollTimer !== null) {
+        window.clearTimeout(pollTimer);
+      }
+    };
+  }, [addDebugEntry, mirrorParserActivityToDebug]);
+
+  useEffect(() => {
     const canvasElement = backgroundCanvasElement.current;
     if (!canvasElement) {
       addDebugEntry('warn', 'Background canvas ref missing');
@@ -164,64 +273,6 @@ const IndexPage = () => {
       return;
     }
 
-    const backgroundPalette = theme === 'dark'
-      ? {
-        baseFill: '#04050b',
-        baseTemperature: 0.2,
-        hueBase: 258,
-        hueSpan: 34,
-        hueHaloShift: 8,
-        hueWaveAmp: 14,
-        hueMin: 228,
-        hueMax: 286,
-        saturationBase: 54,
-        saturationSpan: 12,
-        lightnessBase: 18,
-        lightnessSpan: 9,
-        alpha: 0.94,
-        coreHeatRadius: 150,
-        haloHeatRadius: 340,
-        coreHeatWeight: 0.2,
-        haloHeatWeight: 0.12,
-        orbHueA: 224,
-        orbHueB: 266,
-        orbHueC: 244,
-        orbSat: 68,
-        orbLightA: 42,
-        orbLightB: 50,
-        orbLightC: 58,
-        trailLightA: 46,
-        trailLightB: 60,
-      }
-      : {
-        baseFill: '#f8f8ff',
-        baseTemperature: 0.32,
-        hueBase: 236,
-        hueSpan: 74,
-        hueHaloShift: 14,
-        hueWaveAmp: 6,
-        hueMin: 188,
-        hueMax: 286,
-        saturationBase: 56,
-        saturationSpan: 6,
-        lightnessBase: 96,
-        lightnessSpan: 14,
-        alpha: 0.9,
-        coreHeatRadius: 105,
-        haloHeatRadius: 200,
-        coreHeatWeight: 0.52,
-        haloHeatWeight: 0.24,
-        orbHueA: 184,
-        orbHueB: 214,
-        orbHueC: 196,
-        orbSat: 42,
-        orbLightA: 66,
-        orbLightB: 72,
-        orbLightC: 78,
-        trailLightA: 64,
-        trailLightB: 78,
-      };
-
     let fieldWidth = 0;
     let fieldHeight = 0;
 
@@ -231,6 +282,30 @@ const IndexPage = () => {
       { x: 0.26, y: 0.78, weight: 0.26, radius: 360 },
       { x: 0.78, y: 0.72, weight: 0.24, radius: 330 },
     ];
+
+    const palette = theme === 'dark'
+      ? {
+        canvasBase: '#070b15',
+        hueBase: 236,
+        hueRange: 30,
+        hueHaloShift: 8,
+        saturationBase: 52,
+        saturationRange: 7,
+        lightnessBase: 22,
+        lightnessRange: 11,
+        alpha: 0.94,
+      }
+      : {
+        canvasBase: '#f8f8ff',
+        hueBase: 236,
+        hueRange: 78,
+        hueHaloShift: 16,
+        saturationBase: 58,
+        saturationRange: 8,
+        lightnessBase: 96,
+        lightnessRange: 18,
+        alpha: 0.9,
+      };
 
     let frameId = 0;
 
@@ -317,7 +392,7 @@ const IndexPage = () => {
       }
 
       context.clearRect(0, 0, width, height);
-      context.fillStyle = backgroundPalette.baseFill;
+      context.fillStyle = palette.canvasBase;
       context.fillRect(0, 0, width, height);
 
       for (let gridY = 0; gridY < fieldHeight; gridY += 1) {
@@ -334,22 +409,22 @@ const IndexPage = () => {
           const nx = advectX / width;
           const ny = advectY / height;
 
-          let temperature = backgroundPalette.baseTemperature;
+          let temperature = 0.32;
           temperature += 0.09 * Math.sin(nx * 8.4 + time * 0.00045);
           temperature += 0.08 * Math.cos(ny * 7.8 + time * 0.0004);
           temperature += 0.06 * Math.sin((nx + ny) * 9.2 + time * 0.0005);
 
-          const coreHeat = Math.exp(-cursorDist2 / (2 * backgroundPalette.coreHeatRadius * backgroundPalette.coreHeatRadius));
-          const haloHeat = Math.exp(-cursorDist2 / (2 * backgroundPalette.haloHeatRadius * backgroundPalette.haloHeatRadius));
-          temperature += backgroundPalette.coreHeatWeight * coreHeat;
-          temperature += backgroundPalette.haloHeatWeight * haloHeat;
+          const coreHeat = Math.exp(-cursorDist2 / (2 * 105 * 105));
+          const haloHeat = Math.exp(-cursorDist2 / (2 * 200 * 200));
+          temperature += 0.16 * coreHeat;
+          temperature += 0.07 * haloHeat;
 
           const wakeX = pointer.x - flow.x * 16;
           const wakeY = pointer.y - flow.y * 16;
           const wakeDx = gx - wakeX;
           const wakeDy = gy - wakeY;
           const wakeDist2 = wakeDx * wakeDx + wakeDy * wakeDy;
-          temperature += (0.24 + Math.min(0.24, flowMagnitude * 0.018)) * Math.exp(-wakeDist2 / (2 * 300 * 300));
+          temperature += (0.1 + Math.min(0.1, flowMagnitude * 0.01)) * Math.exp(-wakeDist2 / (2 * 300 * 300));
 
           let trailHeat = 0;
           for (let pointIndex = 0; pointIndex < trailPoints.length; pointIndex += 1) {
@@ -362,7 +437,7 @@ const IndexPage = () => {
             const rearBias = Math.max(0, Math.min(1, (-directionalDot / (trailRadius * 0.8)) + 0.08));
             trailHeat += point.life * point.strength * rearBias * Math.exp(-trailDist2 / (2 * trailRadius * trailRadius));
           }
-          temperature += 0.22 * trailHeat;
+          temperature += 0.12 * trailHeat;
 
           for (let anchorIndex = 0; anchorIndex < anchors.length; anchorIndex += 1) {
             const anchor = anchors[anchorIndex];
@@ -376,24 +451,10 @@ const IndexPage = () => {
           }
 
           const clamped = Math.max(0, Math.min(1, temperature));
-          const hueWave =
-            Math.sin(nx * 14 + time * 0.00023) * backgroundPalette.hueWaveAmp
-            + Math.cos(ny * 11 - time * 0.00019) * (backgroundPalette.hueWaveAmp * 0.55);
-          const rawHue = backgroundPalette.hueBase - clamped * backgroundPalette.hueSpan - haloHeat * backgroundPalette.hueHaloShift + hueWave;
-          const hue = Math.max(backgroundPalette.hueMin, Math.min(backgroundPalette.hueMax, rawHue));
-          const saturation = Math.max(
-            16,
-            backgroundPalette.saturationBase
-              - clamped * backgroundPalette.saturationSpan
-              + Math.sin((nx - ny) * 7 + time * 0.0002) * 6,
-          );
-          const lightness = Math.max(
-            12,
-            backgroundPalette.lightnessBase
-              - clamped * backgroundPalette.lightnessSpan
-              + Math.cos((nx + ny) * 5 - time * 0.00017) * 3,
-          );
-          const alpha = backgroundPalette.alpha;
+          const hue = palette.hueBase - clamped * palette.hueRange - haloHeat * palette.hueHaloShift;
+          const saturation = palette.saturationBase - clamped * palette.saturationRange;
+          const lightness = palette.lightnessBase - clamped * palette.lightnessRange;
+          const alpha = palette.alpha;
 
           fieldContext.fillStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
           fieldContext.fillRect(gridX, gridY, 1, 1);
@@ -402,7 +463,7 @@ const IndexPage = () => {
 
       context.save();
       context.imageSmoothingEnabled = true;
-      context.globalAlpha = 0.92;
+      context.globalAlpha = 0.96;
       context.drawImage(fieldCanvas, 0, 0, fieldWidth, fieldHeight, 0, 0, width, height);
       context.restore();
 
@@ -456,10 +517,22 @@ const IndexPage = () => {
     const validFiles = selectedFiles.filter((file) => file.name.toLowerCase().endsWith('.docx'));
     const invalidFiles = selectedFiles.filter((file) => !file.name.toLowerCase().endsWith('.docx'));
 
+    const formatMs = (value: number) => {
+      if (!Number.isFinite(value)) return '0.00';
+      return value.toFixed(2);
+    };
+
+    const formatRate = (value: number) => {
+      if (!Number.isFinite(value)) return '0.00';
+      return value.toFixed(2);
+    };
+
     setUploadStatus('Parsing uploaded file(s)...');
     addDebugEntry('info', `Upload started: ${selectedFiles.length} file(s)`);
     if (validFiles.length > 0) {
-      setUploadDetails(`Parsing now:\n${validFiles.map((file) => `- ${file.name}`).join('\n')}`);
+      const parsingNow = `Parsing now:\n${validFiles.map((file) => `- ${file.name}`).join('\n')}`;
+      setUploadDetails(parsingNow);
+      mirrorParserActivityToDebug('Parsing uploaded file(s)...', parsingNow);
     } else {
       setUploadDetails('No valid .docx files selected.');
       setUploadStatus('Parsed 0 file(s).');
@@ -467,29 +540,81 @@ const IndexPage = () => {
       return;
     }
 
+    const uploadBatchStarted = performance.now();
+
     const outcomes = await Promise.all(validFiles.map(async (file) => {
+      const fileStarted = performance.now();
+      addDebugEntry('info', `Parsing started: ${file.name}`);
       try {
         const response = await apiService.uploadDocx(file);
-        return { filename: file.name, ok: !!response.ok };
+        const parseMs = Number(response.parse_ms || 0);
+        const cardsIndexed = Number(response.cards_indexed || 0);
+        const fileElapsedMs = performance.now() - fileStarted;
+        const cardsPerSecond = parseMs > 0 ? (cardsIndexed * 1000) / parseMs : 0;
+        addDebugEntry(
+          'info',
+          `Parsed ${file.name}: ${cardsIndexed} cards in ${formatMs(parseMs)}ms (${formatRate(cardsPerSecond)} cards/s, wall=${formatMs(fileElapsedMs)}ms)`,
+        );
+        return {
+          filename: file.name,
+          ok: !!response.ok,
+          parseMs,
+          cardsIndexed,
+        };
       } catch (error) {
-        return { filename: file.name, ok: false };
+        const fileElapsedMs = performance.now() - fileStarted;
+        const message = error instanceof Error ? error.message : String(error);
+        addDebugEntry('error', `Parsing failed: ${file.name} after ${formatMs(fileElapsedMs)}ms (${message})`);
+        return { filename: file.name, ok: false, parseMs: 0, cardsIndexed: 0 };
       }
     }));
 
-    const parsedNames = outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.filename);
+    const batchElapsedMs = performance.now() - uploadBatchStarted;
+    const successfulOutcomes = outcomes.filter((outcome) => outcome.ok);
+    const parsedNames = successfulOutcomes.map((outcome) => outcome.filename);
     const failedNames = outcomes.filter((outcome) => !outcome.ok).map((outcome) => outcome.filename);
     const invalidNames = invalidFiles.map((file) => file.name);
+    const totalParseMs = successfulOutcomes.reduce((sum, outcome) => sum + outcome.parseMs, 0);
+    const averageParseMs = successfulOutcomes.length > 0 ? totalParseMs / successfulOutcomes.length : 0;
+    const totalCardsIndexed = successfulOutcomes.reduce((sum, outcome) => sum + outcome.cardsIndexed, 0);
+    const parseCardsPerSecond = totalParseMs > 0 ? (totalCardsIndexed * 1000) / totalParseMs : 0;
+    const wallCardsPerSecond = batchElapsedMs > 0 ? (totalCardsIndexed * 1000) / batchElapsedMs : 0;
 
     const succeeded = parsedNames.length;
     const failed = failedNames.length + invalidNames.length;
-    addDebugEntry('info', `Upload finished: success=${succeeded}, failed=${failed}`);
+    addDebugEntry(
+      'info',
+      `Upload finished: success=${succeeded}, failed=${failed}, total=${formatMs(batchElapsedMs)}ms, avg=${formatMs(averageParseMs)}ms/file`,
+    );
+    if (successfulOutcomes.length > 0) {
+      addDebugEntry('info', `Stopwatch total: ${formatMs(batchElapsedMs)}ms wall, ${formatMs(totalParseMs)}ms parse-sum`);
+      addDebugEntry('info', `Throughput: ${formatRate(parseCardsPerSecond)} cards/s parse-time, ${formatRate(wallCardsPerSecond)} cards/s wall-time`);
+    }
 
     setUploadStatus(`Parsed ${succeeded} file(s). ${failed > 0 ? `${failed} failed.` : ''}`.trim());
-    setUploadDetails([
-      parsedNames.length > 0 ? `Parsed:\n${parsedNames.map((name) => `- ${name}`).join('\n')}` : '',
+    const uploadSummary = [
+      successfulOutcomes.length > 0
+        ? [
+          'Parsed:',
+          ...successfulOutcomes.map((outcome) => {
+            return `- ${outcome.filename} | ${outcome.cardsIndexed} cards | ${formatMs(outcome.parseMs)} ms`;
+          }),
+        ].join('\n')
+        : '',
+      successfulOutcomes.length > 0
+        ? [
+          'Batch timing:',
+          `- Total elapsed (all uploads): ${formatMs(batchElapsedMs)} ms`,
+          `- Total parse time (sum of files): ${formatMs(totalParseMs)} ms`,
+          `- Average parse time per file: ${formatMs(averageParseMs)} ms/file`,
+          `- Total cards indexed: ${totalCardsIndexed}`,
+        ].join('\n')
+        : '',
       failedNames.length > 0 ? `Failed parsing:\n${failedNames.map((name) => `- ${name}`).join('\n')}` : '',
       invalidNames.length > 0 ? `Skipped (not .docx):\n${invalidNames.map((name) => `- ${name}`).join('\n')}` : '',
-    ].filter((block) => block.length > 0).join('\n\n'));
+    ].filter((block) => block.length > 0).join('\n\n');
+    setUploadDetails(uploadSummary);
+    mirrorParserActivityToDebug(`Parsed ${succeeded} file(s). ${failed > 0 ? `${failed} failed.` : ''}`.trim(), uploadSummary);
   };
 
   const onCopyDebugLogs = useCallback(async () => {
@@ -517,14 +642,28 @@ const IndexPage = () => {
       <div className={styles.container}>
         <canvas ref={backgroundCanvasElement} className={styles['temperature-map']} aria-hidden="true" />
         <div className={styles['corner-controls']}>
+          <button
+            type="button"
+            className={styles['theme-toggle-button']}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={toggleTheme}
+          >
+            <img
+              src={theme === 'dark'
+                ? '/light_mode_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png'
+                : '/dark_mode_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png'}
+              alt="Theme"
+              className={`${styles['theme-toggle-icon']} ${theme === 'dark' ? styles['panel-settings-icon-dark'] : ''}`}
+            />
+          </button>
           <Link href="/settings" passHref>
-            <a className={styles['panel-settings-link']}>
+            <a className={styles['panel-settings-link']} aria-label="Settings" title="Settings">
               <img
                 src="/settings_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.png"
                 alt="Settings"
-                className={styles['panel-settings-icon']}
+                className={`${styles['panel-settings-icon']} ${theme === 'dark' ? styles['panel-settings-icon-dark'] : ''}`}
               />
-              Settings
             </a>
           </Link>
           <button
@@ -597,11 +736,10 @@ const IndexPage = () => {
 
         <div className={styles.row}>
           <input onKeyDown={onKeyDown} className={styles.search} placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
-          <button type="button" className={styles.submit} onClick={search}>Search</button>
+          <button type="button" className={styles.submit} onClick={search}>Submit</button>
         </div>
 
         <div className={styles.upload}>
-          <p className={styles['upload-label']}>Upload DOCX to parse now</p>
           <div
             className={`${styles['drop-zone']} ${isDraggingFile ? styles['drop-zone-active'] : ''}`}
             role="button"
@@ -624,7 +762,7 @@ const IndexPage = () => {
               onDocxUpload(event.dataTransfer.files);
             }}
           >
-            Drag and drop .docx files here, or click to choose files
+            Drag and drop .docx files to parse
           </div>
           <div className={styles['upload-actions']}>
             <div className={styles['upload-input-wrap']}>

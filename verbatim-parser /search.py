@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import json
 import os
+import re
 from datetime import datetime, timezone
 from fcntl import flock, LOCK_EX, LOCK_UN
 
@@ -33,6 +34,45 @@ def _to_unix_timestamp(date_value):
       continue
 
   return None
+
+
+def _strip_identifier_token_from_tag(tag):
+  return re.sub(r"\s*\[\[CID-[^\]]+\]\]\s*", " ", str(tag or ""), flags=re.IGNORECASE).strip()
+
+
+def _normalize_exact_match_text(text):
+  lowered = _strip_identifier_token_from_tag(text).lower()
+  lowered = re.sub(r"[^a-z0-9\s]", " ", lowered)
+  lowered = re.sub(r"\s+", " ", lowered)
+  return lowered.strip()
+
+
+def _includes_all_tokens(text, terms, phrases):
+  normalized = str(text or "").lower()
+  return all(phrase in normalized for phrase in phrases) and all(term in normalized for term in terms)
+
+
+def _is_tag_priority_match(card, terms, phrases):
+  if len(terms) == 0 and len(phrases) == 0:
+    return False
+
+  tag_text = card.get("tag", "") or card.get("tag_base", "")
+  normalized_tag = _normalize_exact_match_text(tag_text)
+  return _includes_all_tokens(normalized_tag, terms, phrases)
+
+
+def _is_paragraph_match(card, terms, phrases):
+  if len(terms) == 0 and len(phrases) == 0:
+    return True
+
+  body = card.get("body", [])
+  if isinstance(body, list):
+    body_text = " ".join([str(item) for item in body])
+  else:
+    body_text = str(body or "")
+
+  paragraph_text = f"{str(card.get('highlighted_text', ''))} {body_text}"
+  return _includes_all_tokens(paragraph_text, terms, phrases)
 
 
 class Search:
@@ -244,7 +284,7 @@ class Search:
   def upload_to_dynamo(self, cards):
     self.upload_cards(cards)
 
-  def query(self, q, from_value=0, start_date="", end_date="", exclude_sides="", exclude_division="", exclude_years="", exclude_schools="", sort_by="", cite_match=""):
+  def query(self, q, from_value=0, start_date="", end_date="", exclude_sides="", exclude_division="", exclude_years="", exclude_schools="", sort_by="", cite_match="", limit=30, match_mode=""):
     cards = self._read_cards()
 
     quoted_phrases = []
@@ -265,6 +305,7 @@ class Search:
     excluded_divisions = set(d.split("-")[0].strip().lower() for d in str(exclude_division).split(",") if d.strip())
     excluded_years_set = set(y.strip().lower() for y in str(exclude_years).split(",") if y.strip())
     excluded_schools_set = set(s.strip().lower() for s in str(exclude_schools).split(",") if s.strip())
+    normalized_match_mode = str(match_mode or "").strip().lower()
 
     start_ts = _to_unix_timestamp(start_date)
     end_ts = _to_unix_timestamp(end_date)
@@ -296,29 +337,38 @@ class Search:
         if str(cite_match).lower() not in cite.lower():
           continue
 
-      searchable_text = " ".join([
-        str(card.get("tag", "")),
-        str(card.get("card_identifier", "")),
-        str(card.get("card_identifier_token", "")),
-        str(card.get("card_number", "")),
-        str(card.get("highlighted_text", "")),
-        str(card.get("cite", "")),
-        " ".join(card.get("body", []) if isinstance(card.get("body"), list) else [str(card.get("body", ""))])
-      ]).lower()
+      if normalized_match_mode == "tag":
+        if not _is_tag_priority_match(card, terms, quoted_phrases):
+          continue
+      elif normalized_match_mode == "paragraph":
+        if not _is_paragraph_match(card, terms, quoted_phrases):
+          continue
+      else:
+        searchable_text = " ".join([
+          str(card.get("tag", "")),
+          str(card.get("card_identifier", "")),
+          str(card.get("card_identifier_token", "")),
+          str(card.get("card_number", "")),
+          str(card.get("highlighted_text", "")),
+          str(card.get("cite", "")),
+          " ".join(card.get("body", []) if isinstance(card.get("body"), list) else [str(card.get("body", ""))])
+        ]).lower()
 
-      if any(phrase not in searchable_text for phrase in quoted_phrases):
-        continue
-      if any(term not in searchable_text for term in terms):
-        continue
+        if any(phrase not in searchable_text for phrase in quoted_phrases):
+          continue
+        if any(term not in searchable_text for term in terms):
+          continue
 
       filtered.append(card)
 
     if sort_by == "date":
       filtered.sort(key=lambda c: _to_unix_timestamp(c.get("cite_date")) or 0, reverse=True)
 
-    page = filtered[from_value:from_value + 20]
+    safe_limit = max(1, int(limit)) if str(limit).strip() != "" else 30
+    total_count = len(filtered)
+    page = filtered[from_value:from_value + safe_limit]
     cursor = from_value + len(page)
-    return page, cursor
+    return page, cursor, total_count
 
   def get_colleges(self):
     schools = sorted({str(card.get("school", "")).strip() for card in self._read_cards() if str(card.get("school", "")).strip()})

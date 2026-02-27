@@ -17,6 +17,7 @@ CORS(app)
 
 LOCAL_DOCS_FOLDER = os.environ.get("LOCAL_DOCS_FOLDER", "./local_docs")
 PARSER_SETTINGS_PATH = os.environ.get("PARSER_SETTINGS_PATH", os.path.join(LOCAL_DOCS_FOLDER, "parser_settings.json"))
+PARSER_EVENTS_PATH = os.environ.get("PARSER_EVENTS_PATH", os.path.join(LOCAL_DOCS_FOLDER, "parser_events.jsonl"))
 
 
 DEFAULT_PARSER_SETTINGS = {
@@ -28,26 +29,97 @@ DEFAULT_PARSER_SETTINGS = {
 }
 
 
+def _append_parser_event(level, message, payload=None):
+  event = {
+    "id": f"{int(time.time() * 1000)}-{os.getpid()}-{(time.time_ns() % 1000000)}",
+    "at": int(time.time() * 1000),
+    "level": str(level),
+    "message": str(message),
+  }
+  if isinstance(payload, dict):
+    event.update(payload)
+
+  try:
+    os.makedirs(os.path.dirname(PARSER_EVENTS_PATH), exist_ok=True)
+    with open(PARSER_EVENTS_PATH, "a", encoding="utf-8") as handle:
+      handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+  except OSError:
+    pass
+
+  print(f"[parser:{event['level']}] {event['message']}", flush=True)
+  return event
+
+
+def _tail_parser_events(limit=120):
+  if not os.path.isfile(PARSER_EVENTS_PATH):
+    return []
+
+  try:
+    with open(PARSER_EVENTS_PATH, "r", encoding="utf-8") as handle:
+      lines = handle.readlines()
+  except OSError:
+    return []
+
+  events = []
+  for line in lines[-max(1, int(limit)):]:
+    raw = line.strip()
+    if raw == "":
+      continue
+    try:
+      parsed = json.loads(raw)
+      if isinstance(parsed, dict):
+        events.append(parsed)
+    except json.JSONDecodeError:
+      continue
+
+  return events
+
+
+def _coerce_bool(value, fallback):
+  if isinstance(value, bool):
+    return value
+  if isinstance(value, str):
+    normalized = value.strip().lower()
+    if normalized in ("true", "1", "yes", "on"):
+      return True
+    if normalized in ("false", "0", "no", "off"):
+      return False
+  if isinstance(value, (int, float)):
+    return value != 0
+  return fallback
+
+
+def _clamp_worker_count(value, fallback):
+  max_workers = max(1, os.cpu_count() or 1)
+  try:
+    return max(1, min(int(value), max_workers))
+  except (TypeError, ValueError):
+    return max(1, min(int(fallback), max_workers))
+
+
 def _normalize_parser_settings(data):
   settings = dict(DEFAULT_PARSER_SETTINGS)
   if not isinstance(data, dict):
     return settings
 
   if "use_parallel_processing" in data:
-    settings["use_parallel_processing"] = bool(data.get("use_parallel_processing"))
+    settings["use_parallel_processing"] = _coerce_bool(
+      data.get("use_parallel_processing"),
+      settings["use_parallel_processing"],
+    )
 
   if "flush_enabled" in data:
-    settings["flush_enabled"] = bool(data.get("flush_enabled"))
+    settings["flush_enabled"] = _coerce_bool(data.get("flush_enabled"), settings["flush_enabled"])
 
-  try:
-    settings["parser_card_workers"] = max(1, int(data.get("parser_card_workers", settings["parser_card_workers"])))
-  except (TypeError, ValueError):
-    pass
+  settings["parser_card_workers"] = _clamp_worker_count(
+    data.get("parser_card_workers", settings["parser_card_workers"]),
+    settings["parser_card_workers"],
+  )
 
-  try:
-    settings["local_parser_file_workers"] = max(1, int(data.get("local_parser_file_workers", settings["local_parser_file_workers"])))
-  except (TypeError, ValueError):
-    pass
+  settings["local_parser_file_workers"] = _clamp_worker_count(
+    data.get("local_parser_file_workers", settings["local_parser_file_workers"]),
+    settings["local_parser_file_workers"],
+  )
 
   try:
     settings["flush_every_docs"] = max(1, int(data.get("flush_every_docs", settings["flush_every_docs"])))
@@ -146,9 +218,13 @@ def _index_local_docs_if_empty(search_client):
     return
 
   print(f"Local index is empty. Parsing {len(files)} local .docx files...")
+  _append_parser_event("info", f"Startup parse begins for {len(files)} local file(s)", {
+    "source": "api-startup",
+    "files": len(files),
+  })
   for path in files:
     filename = os.path.basename(path)
-    folder = os.path.dirname(path)
+    parse_started = time.perf_counter()
     parser = Parser(path, {
       "filename": filename,
       "division": "local",
@@ -157,10 +233,23 @@ def _index_local_docs_if_empty(search_client):
       "team": "Local",
       "download_url": "local"
     },
-      max_workers=resolve_card_workers(),
+      max_workers=_resolve_api_card_workers(),
       profile=os.environ.get("PARSER_PROFILE", "0") == "1"
     )
     cards = parser.parse()
+    parse_ms = (time.perf_counter() - parse_started) * 1000
+    cards_per_second = (len(cards) * 1000 / parse_ms) if parse_ms > 0 else 0
+    _append_parser_event(
+      "info",
+      f"Startup parsed {filename}: {len(cards)} cards in {parse_ms:.2f}ms ({cards_per_second:.2f} cards/s)",
+      {
+        "source": "api-startup",
+        "filename": filename,
+        "cards_indexed": len(cards),
+        "parse_ms": round(parse_ms, 2),
+        "cards_per_second": round(cards_per_second, 2),
+      },
+    )
     search_client.upload_cards(cards, force_upload=True)
 
 
@@ -169,7 +258,7 @@ class Api:
     self.search = Search()
     _index_local_docs_if_empty(self.search)
 
-  async def query(self, q, from_value=0, start_date="", end_date="", exclude_sides="", exclude_division="", exclude_years="", exclude_schools="", sort_by="", cite_match=""):
+  async def query(self, q, from_value=0, start_date="", end_date="", exclude_sides="", exclude_division="", exclude_years="", exclude_schools="", sort_by="", cite_match="", limit=30, match_mode=""):
     return self.search.query(
       q,
       from_value=from_value,
@@ -180,7 +269,9 @@ class Api:
       exclude_years=exclude_years,
       exclude_schools=exclude_schools,
       sort_by=sort_by,
-      cite_match=cite_match
+      cite_match=cite_match,
+      limit=limit,
+      match_mode=match_mode
     )
 
   def get_colleges(self):
@@ -213,9 +304,11 @@ def query():
   exclude_years = request.args.get('exclude_years', '')
   sort_by = request.args.get('sort_by', '')
   cite_match = request.args.get('cite_match', '')
+  match_mode = request.args.get('match_mode', '')
+  limit = int(request.args.get('limit', 30))
 
   api = Api()
-  results, next_cursor = asyncio.run(api.query(
+  results, next_cursor, total_count = asyncio.run(api.query(
     search,
     cursor,
     start_date=start_date,
@@ -225,9 +318,11 @@ def query():
     exclude_schools=exclude_schools,
     exclude_years=exclude_years,
     sort_by=sort_by,
-    cite_match=cite_match
+    cite_match=cite_match,
+    limit=limit,
+    match_mode=match_mode
   ))
-  return {"count": len(results), "results": results, "cursor": next_cursor}
+  return {"count": len(results), "results": results, "cursor": next_cursor, "total_count": total_count}
 
 
 @app.route("/card", methods=['GET'])
@@ -265,6 +360,17 @@ def update_parser_settings():
   return {"ok": True, "settings": updated}
 
 
+@app.route("/parser-events", methods=['GET'])
+def get_parser_events():
+  try:
+    limit = int(request.args.get('limit', 120))
+  except (TypeError, ValueError):
+    limit = 120
+
+  limit = max(1, min(limit, 500))
+  return {"events": _tail_parser_events(limit)}
+
+
 @app.route("/upload-docx", methods=['POST'])
 def upload_docx():
   uploaded_file = request.files.get('file')
@@ -287,8 +393,13 @@ def upload_docx():
 
   uploaded_file.save(saved_path)
   stored_filename = os.path.basename(saved_path)
+  _append_parser_event("info", f"Upload received: {stored_filename}", {
+    "source": "api-upload",
+    "filename": stored_filename,
+  })
 
   try:
+    parse_started = time.perf_counter()
     parser = Parser(saved_path, {
       "filename": stored_filename,
       "division": "local",
@@ -301,15 +412,33 @@ def upload_docx():
       profile=os.environ.get("PARSER_PROFILE", "0") == "1"
     )
     cards = parser.parse()
+    parse_ms = (time.perf_counter() - parse_started) * 1000
+    cards_per_second = (len(cards) * 1000 / parse_ms) if parse_ms > 0 else 0
     search = Search()
     search.upload_cards(cards, force_upload=True)
+    _append_parser_event(
+      "info",
+      f"Parsed {stored_filename}: {len(cards)} cards in {parse_ms:.2f}ms ({cards_per_second:.2f} cards/s)",
+      {
+        "source": "api-upload",
+        "filename": stored_filename,
+        "cards_indexed": len(cards),
+        "parse_ms": round(parse_ms, 2),
+        "cards_per_second": round(cards_per_second, 2),
+      },
+    )
     return {
       "ok": True,
       "filename": stored_filename,
       "stored_path": saved_path,
-      "cards_indexed": len(cards)
+      "cards_indexed": len(cards),
+      "parse_ms": round(parse_ms, 2),
     }
   except Exception as error:
+    _append_parser_event("error", f"Failed parsing {stored_filename}: {error}", {
+      "source": "api-upload",
+      "filename": stored_filename,
+    })
     return {"error": f"Failed to parse {stored_filename}: {error}"}, 500
 
 
@@ -402,6 +531,7 @@ def index_document():
 
   absolute_path = file_item["absolute_path"]
   try:
+    parse_started = time.perf_counter()
     parser = Parser(absolute_path, {
       "filename": file_item["filename"],
       "division": "local",
@@ -414,14 +544,31 @@ def index_document():
       profile=os.environ.get("PARSER_PROFILE", "0") == "1"
     )
     cards = parser.parse()
+    parse_ms = (time.perf_counter() - parse_started) * 1000
+    cards_per_second = (len(cards) * 1000 / parse_ms) if parse_ms > 0 else 0
     search = Search()
     search.upload_cards(cards, force_upload=True)
+    _append_parser_event(
+      "info",
+      f"Indexed {file_item['filename']}: {len(cards)} cards in {parse_ms:.2f}ms ({cards_per_second:.2f} cards/s)",
+      {
+        "source": "api-index-document",
+        "filename": file_item["filename"],
+        "cards_indexed": len(cards),
+        "parse_ms": round(parse_ms, 2),
+        "cards_per_second": round(cards_per_second, 2),
+      },
+    )
     return {
       "ok": True,
       "filename": file_item["filename"],
       "cards_indexed": len(cards),
     }
   except Exception as error:
+    _append_parser_event("error", f"Failed indexing {file_item['filename']}: {error}", {
+      "source": "api-index-document",
+      "filename": file_item["filename"],
+    })
     return {"error": f"Failed to index {file_item['filename']}: {error}"}, 500
 
 

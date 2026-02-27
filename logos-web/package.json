@@ -1,12 +1,57 @@
 {
   "name": "logos-web",
+  "version": "1.2.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "desktop:dev": "ELECTRON_START_URL=http://localhost:3001 electron .",
+    "desktop:icon": "bash ./scripts/generate-mac-icon.sh",
+    "desktop:build": "yarn desktop:icon && yarn build && electron-builder --mac",
     "lint": "next lint",
     "postinstall": "patch-package"
+  },
+  "build": {
+    "appId": "com.logos.desktop",
+    "productName": "Logos",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "asarUnpack": [
+      "backend/**"
+    ],
+    "files": [
+      ".next/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "next.config.js",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../verbatim-parser ",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!.git/**",
+          "!__pycache__/**",
+          "!venv/**",
+          "!tmp/**",
+          "!test-docs/**"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    }
   },
   "dependencies": {
     "@dotlottie/player-component": "^1.0.4",
@@ -44,6 +89,8 @@
     "@typescript-eslint/eslint-plugin": "^5.4.0",
     "@typescript-eslint/parser": "^5.4.0",
     "babel-eslint": "^10.1.0",
+    "electron": "^32.2.0",
+    "electron-builder": "^24.13.3",
     "eslint": "7",
     "eslint-config-airbnb": "^19.0.1",
     "eslint-config-next": "12.0.4",
